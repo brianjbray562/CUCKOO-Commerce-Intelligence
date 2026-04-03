@@ -359,7 +359,7 @@ CREATE TABLE fact_operational_health (
   UNIQUE(period_start, period_end, product_id, marketplace_id, batch_id)
 );
 
-CREATE INDEX idx_fact_ops_date ON fact_operational_health(date_key);
+CREATE INDEX idx_fact_ops_period ON fact_operational_health(period_start, period_end);
 CREATE INDEX idx_fact_ops_product ON fact_operational_health(product_id);
 
 -- fact_reviews: Review/rating trends
