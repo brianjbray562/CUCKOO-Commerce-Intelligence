@@ -1,9 +1,10 @@
 "use client"
 
-import { useState, useCallback } from "react"
+import { useState, useCallback, useEffect } from "react"
 import { Upload, FileSpreadsheet, CheckCircle, XCircle, Clock, AlertTriangle, Trash2 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import type { UploadStatus } from "@/types/database"
+import { createBrowserClient } from "@supabase/ssr"
 
 // Report source options (matches dim_report_source seeds)
 const REPORT_SOURCES = [
@@ -72,7 +73,42 @@ export default function DataManagementPage() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
   const [previewData, setPreviewData] = useState<{ columns: string[]; rows: Record<string, string>[] } | null>(null)
   const [uploading, setUploading] = useState(false)
-  const [uploads] = useState<UploadRecord[]>([])
+  const [uploads, setUploads] = useState<UploadRecord[]>([])
+
+  const fetchUploads = useCallback(async () => {
+    try {
+      const supabase = createBrowserClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL!,
+        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+      )
+      const { data } = await supabase
+        .from("dim_upload_batch")
+        .select("batch_id, file_name, status, uploaded_at, row_count_raw, row_count_loaded, row_count_errors, date_range_start, date_range_end, source_id, dim_report_source(source_name)")
+        .order("uploaded_at", { ascending: false })
+        .limit(50)
+
+      if (data) {
+        setUploads(data.map((u: Record<string, unknown>) => ({
+          batch_id: u.batch_id as string,
+          file_name: u.file_name as string,
+          source_name: (u.dim_report_source as Record<string, string>)?.source_name || "Unknown",
+          status: u.status as UploadStatus,
+          uploaded_at: u.uploaded_at as string,
+          row_count_raw: (u.row_count_raw as number) || 0,
+          row_count_loaded: (u.row_count_loaded as number) || 0,
+          row_count_errors: (u.row_count_errors as number) || 0,
+          date_range_start: u.date_range_start as string | null,
+          date_range_end: u.date_range_end as string | null,
+        })))
+      }
+    } catch {
+      // Silently fail — upload history is non-critical
+    }
+  }, [])
+
+  useEffect(() => {
+    fetchUploads()
+  }, [fetchUploads])
 
   const handleDrag = useCallback((e: React.DragEvent) => {
     e.preventDefault()
@@ -123,15 +159,19 @@ export default function DataManagementPage() {
     }
   }
 
-  const handleUpload = async () => {
-    if (!selectedFile || !selectedSource) return
-    setUploading(true)
+  const [uploadResult, setUploadResult] = useState<{
+    status: string
+    rows_loaded: number
+    rows_errors: number
+    source_name: string
+    date_range: string[]
+  } | null>(null)
 
-    // In production, this would:
-    // 1. Upload file to Supabase Storage
-    // 2. Create dim_upload_batch record
-    // 3. Trigger ETL pipeline
-    // For now, show the workflow structure
+  const handleUpload = async () => {
+    if (!selectedFile) return
+    setUploading(true)
+    setUploadResult(null)
+
     try {
       const formData = new FormData()
       formData.append("file", selectedFile)
@@ -143,16 +183,24 @@ export default function DataManagementPage() {
         body: formData,
       })
 
+      const result = await response.json()
+
       if (!response.ok) {
-        throw new Error("Upload failed")
+        alert(result.error || "Upload failed")
+        return
       }
 
-      // Reset form
+      setUploadResult(result)
+
+      // Reset form after successful upload
       setSelectedFile(null)
       setPreviewData(null)
       setSelectedSource("")
+
+      // Refresh upload history
+      fetchUploads()
     } catch {
-      alert("Upload failed. Make sure Supabase is configured in .env.local")
+      alert("Upload failed. Check your network connection and Supabase configuration.")
     } finally {
       setUploading(false)
     }
@@ -320,6 +368,45 @@ export default function DataManagementPage() {
             </p>
           )}
         </div>
+
+        {/* Upload result */}
+        {uploadResult && (
+          <div className={cn(
+            "mt-4 rounded-md border p-4",
+            uploadResult.status === "completed"
+              ? "border-green-200 bg-green-50"
+              : "border-red-200 bg-red-50"
+          )}>
+            <div className="flex items-center gap-2">
+              {uploadResult.status === "completed" ? (
+                <CheckCircle className="h-4 w-4 text-green-600" />
+              ) : (
+                <XCircle className="h-4 w-4 text-red-600" />
+              )}
+              <span className={cn("text-sm font-medium", uploadResult.status === "completed" ? "text-green-700" : "text-red-700")}>
+                {uploadResult.status === "completed" ? "Upload processed successfully" : "Upload had errors"}
+              </span>
+            </div>
+            <div className="mt-2 grid grid-cols-2 gap-2 text-xs sm:grid-cols-4">
+              <div>
+                <span className="text-muted-foreground">Source:</span>{" "}
+                <span className="font-medium">{uploadResult.source_name}</span>
+              </div>
+              <div>
+                <span className="text-muted-foreground">Rows loaded:</span>{" "}
+                <span className="font-medium">{uploadResult.rows_loaded}</span>
+              </div>
+              <div>
+                <span className="text-muted-foreground">Errors:</span>{" "}
+                <span className="font-medium">{uploadResult.rows_errors}</span>
+              </div>
+              <div>
+                <span className="text-muted-foreground">Period:</span>{" "}
+                <span className="font-medium">{uploadResult.date_range?.join(" to ")}</span>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Upload history */}
