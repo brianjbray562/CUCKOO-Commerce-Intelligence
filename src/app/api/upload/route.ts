@@ -315,13 +315,77 @@ export async function POST(request: NextRequest) {
 
     if (ext === "csv") {
       const fileText = fileBuffer.toString("utf-8")
-      const parseResult = Papa.parse<Record<string, string>>(fileText, {
-        header: true,
+
+      // Brand Analytics CSVs have metadata rows at the top (Brand, Reporting Range, etc.)
+      // Parse as raw rows first to find the real header
+      const rawParse = Papa.parse<string[]>(fileText, {
+        header: false,
         skipEmptyLines: true,
-        transformHeader: (h: string) => h.trim(),
       })
-      columns = parseResult.meta.fields || []
-      rows = parseResult.data
+      const allLines = rawParse.data
+
+      // Find the header row by looking for a row with "ASIN" or data-like columns
+      let headerIdx = 0
+      const dataColumnMarkers = ["asin", "search query", "campaign name", "impressions",
+        "ordered revenue", "glance views", "advertised asin", "product title"]
+
+      for (let i = 0; i < Math.min(allLines.length, 20); i++) {
+        const lineValues = allLines[i].map(v => String(v).toLowerCase().trim())
+        if (lineValues.some(v => dataColumnMarkers.includes(v))) {
+          headerIdx = i
+          break
+        }
+      }
+
+      // Extract metadata from rows before header (for date range)
+      for (let i = 0; i < headerIdx; i++) {
+        const line = allLines[i]
+        if (!line || line.length < 2) continue
+        for (let j = 0; j < line.length; j++) {
+          const cell = String(line[j]).toLowerCase().trim()
+          if (cell.includes("select week") || cell.includes("reporting range") || cell.includes("viewing range")) {
+            const nextCell = j + 1 < line.length ? String(line[j + 1]).trim() : ""
+            if (nextCell) xlsxMetadata["viewing_range"] = nextCell
+          }
+        }
+        // Also check for embedded date range in cell values
+        for (const cell of line) {
+          const cellStr = String(cell).trim()
+          if (cellStr.includes(" - ") && /\d{1,2}\/\d{1,2}\/\d{2,4}/.test(cellStr)) {
+            // Extract just the date part: "Week 13 | 2026-03-22 - 2026-03-28 2026" or "3/22/26 - 3/28/26"
+            const dateMatch = cellStr.match(/(\d{1,2}\/\d{1,2}\/\d{2,4})\s*-\s*(\d{1,2}\/\d{1,2}\/\d{2,4})/) ||
+                              cellStr.match(/(\d{4}-\d{2}-\d{2})\s*-\s*(\d{4}-\d{2}-\d{2})/)
+            if (dateMatch) {
+              xlsxMetadata["viewing_range"] = `${dateMatch[1]} - ${dateMatch[2]}`
+            }
+          }
+        }
+      }
+
+      if (headerIdx > 0) {
+        // Re-parse starting from the header row
+        const dataLines = allLines.slice(headerIdx)
+        const headers = dataLines[0].map(h => String(h).trim())
+        columns = headers.filter(h => h.length > 0)
+        rows = dataLines.slice(1)
+          .filter(line => line.some(cell => cell !== "" && cell != null))
+          .map(line => {
+            const obj: Record<string, string> = {}
+            columns.forEach((col, idx) => {
+              obj[col] = line[idx] != null ? String(line[idx]).trim() : ""
+            })
+            return obj
+          })
+      } else {
+        // No metadata, parse normally with headers
+        const parseResult = Papa.parse<Record<string, string>>(fileText, {
+          header: true,
+          skipEmptyLines: true,
+          transformHeader: (h: string) => h.trim(),
+        })
+        columns = parseResult.meta.fields || []
+        rows = parseResult.data
+      }
     } else if (ext === "xlsx" || ext === "xls") {
       const workbook = XLSX.read(fileBuffer, { type: "buffer" })
       const sheetName = workbook.SheetNames[0]
