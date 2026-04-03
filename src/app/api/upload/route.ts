@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@supabase/supabase-js"
 import Papa from "papaparse"
+import * as XLSX from "xlsx"
 
 function getSupabase() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL!
@@ -125,12 +126,13 @@ function normalizeAsin(value: string | undefined): string | null {
   return null
 }
 
-// Detect date range from the "Reporting Range" column or filename
+// Detect date range from column data, "Reporting Range" column, or filename
 function detectPeriodDates(
   rows: Record<string, string>[],
-  mapping: Record<string, string>
+  mapping: Record<string, string>,
+  fileName?: string,
 ): { periodStart: string; periodEnd: string } {
-  // Look for "Reporting Range" column
+  // 1. Look for "Reporting Range" column
   const reportingRangeCol = Object.entries(mapping).find(([, v]) => v === "date_key")?.[0]
   if (reportingRangeCol && rows[0]?.[reportingRangeCol]) {
     const val = rows[0][reportingRangeCol]
@@ -146,7 +148,38 @@ function detectPeriodDates(
     if (single) return { periodStart: single, periodEnd: single }
   }
 
-  // Default to current week
+  // 2. Try to extract dates from filename
+  // Pattern: Weekly_3-22-2026_3-28-2026 or Weekly_2026-03-22_2026-03-28
+  if (fileName) {
+    // Match M-D-YYYY_M-D-YYYY pattern
+    const fnMatch = fileName.match(/(\d{1,2})-(\d{1,2})-(\d{4})[_\s]+(\d{1,2})-(\d{1,2})-(\d{4})/)
+    if (fnMatch) {
+      const start = `${fnMatch[3]}-${fnMatch[1].padStart(2, "0")}-${fnMatch[2].padStart(2, "0")}`
+      const end = `${fnMatch[6]}-${fnMatch[4].padStart(2, "0")}-${fnMatch[5].padStart(2, "0")}`
+      return { periodStart: start, periodEnd: end }
+    }
+    // Match YYYY-MM-DD_YYYY-MM-DD pattern
+    const isoMatch = fileName.match(/(\d{4}-\d{2}-\d{2})[_\s]+(\d{4}-\d{2}-\d{2})/)
+    if (isoMatch) {
+      return { periodStart: isoMatch[1], periodEnd: isoMatch[2] }
+    }
+  }
+
+  // 3. Look for any date-like column in the data
+  for (const row of rows.slice(0, 5)) {
+    for (const val of Object.values(row)) {
+      if (val && typeof val === "string") {
+        const parts = val.split(/\s*[-–]\s*/)
+        if (parts.length === 2) {
+          const start = tryParseDate(parts[0].trim())
+          const end = tryParseDate(parts[1].trim())
+          if (start && end) return { periodStart: start, periodEnd: end }
+        }
+      }
+    }
+  }
+
+  // 4. Default to current week
   const now = new Date()
   const monday = new Date(now)
   monday.setDate(now.getDate() - now.getDay() + 1)
@@ -222,7 +255,6 @@ export async function POST(request: NextRequest) {
     }
 
     const fileBuffer = Buffer.from(await file.arrayBuffer())
-    const fileText = fileBuffer.toString("utf-8")
     const timestamp = Date.now()
     const storagePath = `uploads/${timestamp}_${file.name}`
 
@@ -231,15 +263,39 @@ export async function POST(request: NextRequest) {
       contentType: file.type || "application/octet-stream",
     }).catch(() => { /* storage is optional */ })
 
-    // 2. Parse CSV
-    const parseResult = Papa.parse<Record<string, string>>(fileText, {
-      header: true,
-      skipEmptyLines: true,
-      transformHeader: (h: string) => h.trim(),
-    })
+    // 2. Parse file (CSV or XLSX)
+    let columns: string[] = []
+    let rows: Record<string, string>[] = []
+    const ext = file.name.split(".").pop()?.toLowerCase()
 
-    const columns = parseResult.meta.fields || []
-    const rows = parseResult.data
+    if (ext === "csv") {
+      const fileText = fileBuffer.toString("utf-8")
+      const parseResult = Papa.parse<Record<string, string>>(fileText, {
+        header: true,
+        skipEmptyLines: true,
+        transformHeader: (h: string) => h.trim(),
+      })
+      columns = parseResult.meta.fields || []
+      rows = parseResult.data
+    } else if (ext === "xlsx" || ext === "xls") {
+      const workbook = XLSX.read(fileBuffer, { type: "buffer" })
+      const sheetName = workbook.SheetNames[0]
+      const sheet = workbook.Sheets[sheetName]
+      const jsonData = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: "" })
+
+      if (jsonData.length > 0) {
+        columns = Object.keys(jsonData[0]).map(c => String(c).trim())
+        rows = jsonData.map(row => {
+          const cleaned: Record<string, string> = {}
+          for (const [key, value] of Object.entries(row)) {
+            cleaned[key.trim()] = value != null ? String(value).trim() : ""
+          }
+          return cleaned
+        })
+      }
+    } else {
+      return NextResponse.json({ error: "Unsupported file type. Use CSV or XLSX." }, { status: 400 })
+    }
 
     if (rows.length === 0) {
       return NextResponse.json({ error: "File is empty or could not be parsed" }, { status: 400 })
@@ -311,7 +367,7 @@ export async function POST(request: NextRequest) {
     let loadedCount = 0
     let errorCount = 0
     const errors: Array<{ row: number; message: string }> = []
-    const { periodStart, periodEnd } = detectPeriodDates(rows, columnMapping)
+    const { periodStart, periodEnd } = detectPeriodDates(rows, columnMapping, file.name)
 
     for (let i = 0; i < rows.length; i++) {
       try {
