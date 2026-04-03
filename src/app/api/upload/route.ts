@@ -11,7 +11,7 @@ function getSupabase() {
 
 // Column alias mapping for auto-mapping source columns to canonical names
 const COLUMN_ALIASES: Record<string, string[]> = {
-  date_key: ["date", "day", "report date", "date range", "reporting range", "week"],
+  date_key: ["date", "day", "report date", "date range", "reporting range", "week", "start date"],
   asin: ["asin", "(child) asin", "advertised asin", "promoted asin", "child asin"],
   parent_asin: ["parent asin", "(parent) asin"],
   product_title: ["product title", "title", "product name", "item name", "(child) asin title", "advertised product title"],
@@ -36,9 +36,14 @@ const COLUMN_ALIASES: Record<string, string[]> = {
   impressions: ["impressions", "impr.", "impr"],
   clicks: ["clicks"],
   spend: ["spend", "cost", "total spend"],
-  ad_sales: ["7 day total sales", "14 day total sales", "total advertising sales", "attributed sales"],
-  ad_units: ["7 day total units", "14 day total units", "total advertising units", "attributed units"],
-  orders: ["7 day total orders", "14 day total orders", "total orders", "attributed orders"],
+  ad_sales: ["7 day total sales", "14 day total sales", "total advertising sales", "attributed sales", "7 day total sales (#)", "14 day total sales (#)"],
+  ad_units: ["7 day total units", "14 day total units", "total advertising units", "attributed units", "7 day total units (#)", "14 day total units (#)"],
+  orders: ["7 day total orders", "14 day total orders", "total orders", "attributed orders", "7 day total orders (#)", "14 day total orders (#)"],
+  ctr: ["click-thru rate (ctr)", "ctr", "click through rate", "click-thru rate"],
+  cpc: ["cost per click (cpc)", "cpc", "avg cpc", "cost per click"],
+  acos_raw: ["total advertising cost of sales (acos)", "acos", "acos (%)"],
+  roas_raw: ["total return on advertising spend (roas)", "roas"],
+  conversion_rate_ad: ["14 day conversion rate", "7 day conversion rate"],
   query_text: ["search query", "query", "customer search term", "search term"],
   search_query_volume: ["search query volume", "search volume", "query volume"],
   search_query_rank: ["search query score", "search frequency rank"],
@@ -95,12 +100,30 @@ function detectSourceType(columns: string[]): string | null {
   return null
 }
 
+function normalizeColumnName(col: string): string {
+  return col.toLowerCase().trim()
+    .replace(/\s*\(#\)\s*$/, "")       // Remove (#) suffix
+    .replace(/\s*\(acos\)\s*$/i, "")   // Remove (ACOS) suffix
+    .replace(/\s*\(roas\)\s*$/i, "")   // Remove (ROAS) suffix
+    .replace(/\s*\(ctr\)\s*$/i, "")    // Remove (CTR) suffix
+    .replace(/\s*\(cpc\)\s*$/i, "")    // Remove (CPC) suffix
+    .trim()
+}
+
 function autoMapColumns(columns: string[]): Record<string, string> {
   const mapping: Record<string, string> = {}
   for (const col of columns) {
     const key = col.toLowerCase().trim()
+    // Try exact match first
     if (ALIAS_LOOKUP[key]) {
       mapping[col] = ALIAS_LOOKUP[key]
+      continue
+    }
+    // Try with normalized name (stripped suffixes)
+    const normalized = normalizeColumnName(col)
+    if (ALIAS_LOOKUP[normalized]) {
+      mapping[col] = ALIAS_LOOKUP[normalized]
+      continue
     }
   }
   return mapping
