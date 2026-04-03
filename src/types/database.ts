@@ -91,7 +91,9 @@ export interface DimUploadBatch {
 // Fact types
 export interface FactSales {
   id: string;
-  date_key: string;
+  period_start: string;
+  period_end: string;
+  grain: 'daily' | 'weekly' | 'monthly';
   product_id: string;
   marketplace_id: string;
   batch_id: string;
@@ -101,6 +103,10 @@ export interface FactSales {
   shipped_units: number;
   shipped_cogs: number;
   avg_selling_price: number;
+  ordered_revenue_prior: number | null;
+  ordered_revenue_ly: number | null;
+  ordered_units_prior: number | null;
+  ordered_units_ly: number | null;
   subcategory_rank: number | null;
   category_rank: number | null;
 }
@@ -126,16 +132,15 @@ export interface FactAdvertising {
 
 export interface FactTrafficConversion {
   id: string;
-  date_key: string;
+  period_start: string;
+  period_end: string;
+  grain: 'daily' | 'weekly' | 'monthly';
   product_id: string;
   marketplace_id: string;
   batch_id: string;
-  sessions: number;
-  page_views: number;
-  page_views_percentage: number;
-  buy_box_percentage: number;
-  unit_session_percentage: number;
-  session_percentage: number;
+  glance_views: number;
+  glance_views_prior: number | null;
+  glance_views_ly: number | null;
 }
 
 export interface FactSearchVisibility {
@@ -160,25 +165,30 @@ export interface FactSearchVisibility {
 
 export interface FactOperationalHealth {
   id: string;
-  date_key: string;
+  period_start: string;
+  period_end: string;
+  grain: 'daily' | 'weekly' | 'monthly';
   product_id: string;
   marketplace_id: string;
   batch_id: string;
-  in_stock_rate: number;
+  sellthrough_rate: number;
+  open_po_units: number;
+  unfilled_units: number;
   available_units: number;
-  sellable_units: number;
-  unfulfillable_units: number;
-  buy_box_win_rate: number;
+  sell_in_units: number;
+  weeks_of_cover: number;
+  aged_90plus_units: number;
   content_score: number;
-  listing_quality_score: number;
   has_a_plus: boolean;
   image_count: number;
   bullet_count: number;
 }
 
 // View types (for dashboard queries)
-export interface DailyAsinPerformance {
-  date_key: string;
+export interface AsinPerformance {
+  period_start: string;
+  period_end: string;
+  grain: string;
   asin: string;
   parent_asin: string | null;
   product_title: string | null;
@@ -191,9 +201,14 @@ export interface DailyAsinPerformance {
   avg_selling_price: number;
   shipped_revenue: number;
   shipped_units: number;
-  sessions: number | null;
-  page_views: number | null;
-  buy_box_percentage: number | null;
+  shipped_cogs: number;
+  ordered_revenue_prior: number | null;
+  ordered_revenue_ly: number | null;
+  ordered_units_prior: number | null;
+  ordered_units_ly: number | null;
+  glance_views: number | null;
+  glance_views_prior: number | null;
+  glance_views_ly: number | null;
   conversion_rate: number | null;
   ad_impressions: number | null;
   ad_clicks: number | null;
@@ -206,8 +221,10 @@ export interface DailyAsinPerformance {
   tacos: number;
 }
 
-export interface DailySummary {
-  date_key: string;
+export interface PeriodSummary {
+  period_start: string;
+  period_end: string;
+  grain: string;
   year: number;
   quarter: number;
   month: number;
@@ -216,7 +233,9 @@ export interface DailySummary {
   total_revenue: number;
   total_units: number;
   avg_asp: number;
-  total_sessions: number | null;
+  total_shipped_revenue: number;
+  total_cogs: number;
+  total_glance_views: number | null;
   avg_conversion_rate: number | null;
   total_ad_spend: number | null;
   total_ad_sales: number | null;

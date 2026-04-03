@@ -15,7 +15,7 @@ const SAMPLE_KPI = [
   { label: "Ad Sales (Attributed)", value: 0, format: "currency" as const, tooltip: "SUM(ad_sales) from fact_advertising", source: "fact_advertising" },
   { label: "ROAS", value: 0, format: "number" as const, tooltip: "ad_sales / spend", source: "fact_advertising" },
   { label: "TACoS", value: 0, format: "percent" as const, tooltip: "SUM(ad_spend) / SUM(total_revenue)", source: "fact_advertising + fact_sales" },
-  { label: "Sessions", value: 0, format: "compact" as const, tooltip: "SUM(sessions) from fact_traffic_conversion", source: "fact_traffic_conversion" },
+  { label: "Glance Views", value: 0, format: "compact" as const, tooltip: "SUM(glance_views) from ARA Traffic", source: "ARA Traffic" },
 ]
 
 interface AsinRow {
@@ -36,7 +36,7 @@ const ASIN_COLUMNS: Column<AsinRow>[] = [
   { key: "ordered_units", label: "Units", format: "number", sortable: true, align: "right" },
   { key: "ad_spend", label: "Ad Spend", format: "currency", sortable: true, align: "right" },
   { key: "acos", label: "ACoS", format: "percent", sortable: true, align: "right" },
-  { key: "sessions", label: "Sessions", format: "number", sortable: true, align: "right" },
+  { key: "sessions", label: "Glance Views", format: "number", sortable: true, align: "right" },
   { key: "conversion_rate", label: "CVR", format: "percent", sortable: true, align: "right" },
 ]
 
@@ -58,7 +58,7 @@ export default function OverviewPage() {
           <p className="font-medium text-foreground">No data uploaded yet</p>
           <p className="mt-1">
             Go to <a href="/data-management" className="font-medium text-primary underline">Data Management</a> to
-            upload your first report. Start with Amazon Business Reports or ARA Sales data for the best initial view.
+            upload your first report. Start with ARA Sales (Ordered Revenue) for the best initial view.
           </p>
         </div>
       </div>
@@ -95,9 +95,9 @@ export default function OverviewPage() {
       {/* Traffic + Conversion */}
       <TrendChart
         data={[]}
-        title="Sessions & Conversion Rate"
+        title="Glance Views & Conversion Rate"
         lines={[
-          { dataKey: "total_sessions", label: "Sessions", color: "var(--chart-1)", format: "number" },
+          { dataKey: "total_glance_views", label: "Glance Views", color: "var(--chart-1)", format: "number" },
           { dataKey: "avg_conversion_rate", label: "CVR", color: "var(--chart-2)", format: "percent", yAxisId: "right" },
         ]}
         dualAxis
@@ -117,7 +117,7 @@ export default function OverviewPage() {
         <ul className="mt-2 space-y-1 text-xs text-muted-foreground">
           <li>Ad Sales are attributed revenue (7-day or 14-day attribution window depending on campaign type). They are not additive with organic sales.</li>
           <li>TACoS = Total Ad Spend / Total Ordered Revenue. Lower is better. This is the key efficiency metric connecting ads to total business.</li>
-          <li>Conversion Rate = Units Ordered / Sessions. This metric comes from Business Reports and may differ from advertising conversion rates.</li>
+          <li>Conversion Rate = Units Ordered / Glance Views. This uses ARA Traffic data (weekly grain).</li>
           <li>All metrics reflect data coverage. If a report type has not been uploaded for a date range, those metrics will show as zero, not missing.</li>
         </ul>
       </div>

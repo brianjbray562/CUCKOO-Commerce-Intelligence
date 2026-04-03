@@ -41,7 +41,7 @@ export default function AdvertisingPage() {
       <div className="flex items-start gap-3 rounded-lg border border-border bg-muted/30 p-4">
         <AlertCircle className="mt-0.5 h-4 w-4 text-muted-foreground shrink-0" />
         <div className="text-sm text-muted-foreground">
-          <p>Upload <strong>Sponsored Products</strong>, <strong>Sponsored Brands</strong>, or <strong>Sponsored Display</strong> campaign reports to populate this view.</p>
+          <p>Upload <strong>SP Campaign Reports</strong>, <strong>SP Advertised Product Reports</strong>, or <strong>SB Campaign Reports</strong> to populate this view.</p>
         </div>
       </div>
 

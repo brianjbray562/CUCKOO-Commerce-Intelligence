@@ -44,7 +44,7 @@ export default function SalesPage() {
       <div className="flex items-start gap-3 rounded-lg border border-border bg-muted/30 p-4">
         <AlertCircle className="mt-0.5 h-4 w-4 text-muted-foreground shrink-0" />
         <div className="text-sm text-muted-foreground">
-          <p>Upload <strong>Amazon Retail Analytics</strong> or <strong>Business Reports</strong> to populate this view.</p>
+          <p>Upload <strong>ARA Sales (Ordered Revenue)</strong> or <strong>ARA Sales (Shipped Revenue)</strong> from Vendor Central to populate this view.</p>
         </div>
       </div>
 
@@ -99,7 +99,8 @@ export default function SalesPage() {
           <li>Is total revenue growing or declining? At what rate?</li>
           <li>Is growth driven by units or price? Is ASP trending up or down?</li>
           <li>Which ASINs contribute the most revenue? Is the portfolio concentrated or diversified?</li>
-          <li>Is there a gap between ordered and shipped revenue (indicating cancellations or returns)?</li>
+          <li>Is there a gap between ordered and shipped revenue (indicating PO shortfalls or returns)?</li>
+          <li>What does the COGS data tell us about margin trends?</li>
         </ul>
       </div>
     </div>

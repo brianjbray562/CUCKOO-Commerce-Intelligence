@@ -7,16 +7,22 @@ import type { UploadStatus } from "@/types/database"
 
 // Report source options (matches dim_report_source seeds)
 const REPORT_SOURCES = [
-  { value: "Amazon Business Report - Sales & Traffic", label: "Amazon Business Report - Sales & Traffic", category: "sales" },
-  { value: "Amazon Retail Analytics - Sales", label: "Amazon Retail Analytics - Sales", category: "sales" },
-  { value: "Sponsored Products Campaign Report", label: "Sponsored Products - Campaign Report", category: "advertising" },
-  { value: "Sponsored Products Advertised Product Report", label: "Sponsored Products - Advertised Product Report", category: "advertising" },
-  { value: "Sponsored Brands Campaign Report", label: "Sponsored Brands - Campaign Report", category: "advertising" },
-  { value: "Search Query Performance", label: "Search Query Performance", category: "search" },
-  { value: "Search Catalog Performance", label: "Search Catalog Performance", category: "search" },
-  { value: "Inventory Health Report", label: "Inventory Health Report", category: "operations" },
-  { value: "Customer Reviews Report", label: "Customer Reviews Report", category: "reviews" },
-  { value: "Promotions Report", label: "Promotions Report", category: "promotions" },
+  // ARA (Vendor Central)
+  { value: "ARA Sales - Ordered Revenue", label: "ARA Sales - Ordered Revenue", category: "sales" },
+  { value: "ARA Sales - Shipped Revenue", label: "ARA Sales - Shipped Revenue", category: "sales" },
+  { value: "ARA Traffic", label: "ARA Traffic (Glance Views)", category: "traffic" },
+  { value: "ARA Inventory", label: "ARA Inventory", category: "operations" },
+  // Advertising
+  { value: "SP Campaign Report", label: "SP Campaign Report", category: "advertising" },
+  { value: "SP Advertised Product Report", label: "SP Advertised Product Report", category: "advertising" },
+  { value: "SP Search Term Report", label: "SP Search Term Report", category: "advertising" },
+  { value: "SB Campaign Report", label: "SB Campaign Report", category: "advertising" },
+  // Brand Analytics (from 3P account)
+  { value: "Search Query Performance", label: "Search Query Performance (Brand Analytics)", category: "search" },
+  { value: "Search Catalog Performance", label: "Search Catalog Performance (Brand Analytics)", category: "search" },
+  { value: "Market Basket Analysis", label: "Market Basket Analysis (Brand Analytics)", category: "search" },
+  { value: "Repeat Purchase Behavior", label: "Repeat Purchase Behavior (Brand Analytics)", category: "search" },
+  { value: "Demographics", label: "Demographics (Brand Analytics)", category: "search" },
 ]
 
 const MARKETPLACES = [
@@ -165,7 +171,7 @@ export default function DataManagementPage() {
       <div className="rounded-lg border border-border bg-card p-6">
         <h3 className="text-base font-semibold text-foreground">Upload Report</h3>
         <p className="mt-1 text-sm text-muted-foreground">
-          Upload a CSV or XLSX file from Amazon Seller Central, Vendor Central, or advertising console.
+          Upload reports from Amazon Vendor Central, Advertising Console, or Brand Analytics.
         </p>
 
         <div className="mt-4 grid gap-4 sm:grid-cols-2">
@@ -371,28 +377,28 @@ export default function DataManagementPage() {
         <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Recommended Upload Order</h4>
         <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           <div className="rounded border border-border p-3">
-            <p className="text-sm font-medium text-foreground">1. Business Report</p>
-            <p className="text-xs text-muted-foreground">Sales + Traffic data combined. Best first upload for immediate overview.</p>
+            <p className="text-sm font-medium text-foreground">1. ARA Sales - Ordered Revenue</p>
+            <p className="text-xs text-muted-foreground">Core revenue and units data from Vendor Central. Weekly grain. Best first upload for the executive overview.</p>
           </div>
           <div className="rounded border border-border p-3">
-            <p className="text-sm font-medium text-foreground">2. SP Advertised Product Report</p>
-            <p className="text-xs text-muted-foreground">ASIN-level ad performance. Enables TACoS and ad efficiency analysis.</p>
+            <p className="text-sm font-medium text-foreground">2. ARA Traffic</p>
+            <p className="text-xs text-muted-foreground">Glance views (detail page views) by ASIN. Enables conversion rate analysis when combined with sales data.</p>
           </div>
           <div className="rounded border border-border p-3">
-            <p className="text-sm font-medium text-foreground">3. ARA Sales Report</p>
-            <p className="text-xs text-muted-foreground">Higher-quality sales data with shipped revenue. Replaces Business Report sales data.</p>
+            <p className="text-sm font-medium text-foreground">3. SP Advertised Product Report</p>
+            <p className="text-xs text-muted-foreground">ASIN-level ad performance. Enables TACoS calculation and ad-to-sales connection.</p>
           </div>
           <div className="rounded border border-border p-3">
-            <p className="text-sm font-medium text-foreground">4. Search Query Performance</p>
-            <p className="text-xs text-muted-foreground">Brand Analytics search data. Enables branded vs non-branded analysis.</p>
+            <p className="text-sm font-medium text-foreground">4. ARA Sales - Shipped Revenue</p>
+            <p className="text-xs text-muted-foreground">Shipped revenue and COGS. Shows the gap between ordered and shipped, plus margin signals.</p>
           </div>
           <div className="rounded border border-border p-3">
-            <p className="text-sm font-medium text-foreground">5. Inventory Health</p>
-            <p className="text-xs text-muted-foreground">In-stock rates and availability. Connects supply to demand signals.</p>
+            <p className="text-sm font-medium text-foreground">5. Search Query Performance</p>
+            <p className="text-xs text-muted-foreground">From Brand Analytics (3P account). Search demand capture and branded vs non-branded analysis.</p>
           </div>
           <div className="rounded border border-border p-3">
-            <p className="text-sm font-medium text-foreground">6. SB/SD Campaign Reports</p>
-            <p className="text-xs text-muted-foreground">Completes the advertising picture across all campaign types.</p>
+            <p className="text-sm font-medium text-foreground">6. ARA Inventory</p>
+            <p className="text-xs text-muted-foreground">Sellthrough rate, open POs, weeks of cover. Connects supply health to demand signals.</p>
           </div>
         </div>
       </div>

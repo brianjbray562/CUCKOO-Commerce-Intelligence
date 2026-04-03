@@ -90,50 +90,61 @@ def _find_header_row(lines: list[str], max_skip: int = 10) -> int:
 
 
 def detect_source_type(columns: list[str]) -> Optional[str]:
-    """
-    Attempt to detect the report source type based on column headers.
-
-    Returns source_name string or None if unknown.
-    """
+    """Detect the report source type based on column headers."""
     col_set = {c.lower().strip() for c in columns}
 
-    # Amazon Business Report - Sales & Traffic
-    if {"sessions", "page views", "units ordered"}.issubset(col_set) or {
-        "sessions", "page views", "ordered product sales"
-    }.issubset(col_set):
-        return "Amazon Business Report - Sales & Traffic"
+    # ARA Sales - Ordered Revenue
+    if {"ordered revenue", "ordered units", "average sales price"}.issubset(col_set):
+        return "ARA Sales - Ordered Revenue"
 
-    # ARA Sales
-    if {"ordered revenue", "ordered units", "shipped revenue"}.issubset(col_set):
-        return "Amazon Retail Analytics - Sales"
+    # ARA Sales - Shipped Revenue
+    if {"shipped revenue", "shipped units", "shipped cogs"}.issubset(col_set):
+        return "ARA Sales - Shipped Revenue"
 
-    # SP Advertised Product Report
+    # ARA Traffic
+    if "glance views" in col_set:
+        return "ARA Traffic"
+
+    # ARA Inventory
+    if {"sellthrough rate", "open purchase order quantity"}.issubset(col_set) or \
+       {"sellthrough rate", "available units"}.issubset(col_set):
+        return "ARA Inventory"
+
+    # SP Advertised Product Report (has ASIN + ad metrics)
     if {"advertised asin", "impressions", "clicks", "spend"}.issubset(col_set):
-        return "Sponsored Products Advertised Product Report"
+        return "SP Advertised Product Report"
 
-    # SP Campaign Report
-    if {"campaign name", "impressions", "clicks", "spend"}.issubset(col_set) and (
-        "7 day total sales" in col_set or "14 day total sales" in col_set
-    ):
-        if "advertised asin" not in col_set:
-            return "Sponsored Products Campaign Report"
+    # SP Search Term Report (has Customer Search Term)
+    if {"customer search term", "impressions", "clicks", "spend"}.issubset(col_set):
+        return "SP Search Term Report"
+
+    # SP Campaign Report (campaign-level, no ASIN)
+    if {"campaign name", "impressions", "clicks", "spend"}.issubset(col_set) and \
+       "advertised asin" not in col_set and "customer search term" not in col_set:
+        if "7 day total sales" in col_set:
+            return "SP Campaign Report"
 
     # SB Campaign Report
-    if {"campaign name", "impressions", "clicks", "spend"}.issubset(col_set) and (
-        "14 day total sales" in col_set
-    ):
-        return "Sponsored Brands Campaign Report"
+    if {"campaign name", "impressions", "clicks", "spend"}.issubset(col_set) and \
+       "14 day total sales" in col_set:
+        return "SB Campaign Report"
 
-    # Search Query Performance
-    if {"search query", "search query volume"}.issubset(col_set):
+    # Search Query Performance (Brand Analytics)
+    if {"search query", "search query volume"}.issubset(col_set) or \
+       {"search query", "search query score"}.issubset(col_set):
         return "Search Query Performance"
 
-    # Search Catalog Performance
-    if {"impression share"} & col_set and {"asin", "impressions", "clicks"}.issubset(col_set):
+    # Search Catalog Performance (Brand Analytics)
+    if "search funnel - impressions" in col_set or \
+       ({"impression share"} & col_set and {"asin", "impressions", "clicks"}.issubset(col_set)):
         return "Search Catalog Performance"
 
-    # Inventory Health
-    if {"available", "inbound", "unfulfillable"}.issubset(col_set):
-        return "Inventory Health Report"
+    # Market Basket Analysis
+    if "#1 purchased asin" in col_set or "#1 combination %" in col_set:
+        return "Market Basket Analysis"
+
+    # Repeat Purchase Behavior
+    if {"repeat customer orders", "unique customers"}.issubset(col_set):
+        return "Repeat Purchase Behavior"
 
     return None

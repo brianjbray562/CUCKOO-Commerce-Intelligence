@@ -40,7 +40,7 @@ export default function SearchPage() {
       <div className="flex items-start gap-3 rounded-lg border border-border bg-muted/30 p-4">
         <AlertCircle className="mt-0.5 h-4 w-4 text-muted-foreground shrink-0" />
         <div className="text-sm text-muted-foreground">
-          <p>Upload <strong>Search Query Performance</strong> or <strong>Search Catalog Performance</strong> reports from Brand Analytics to populate this view.</p>
+          <p>Upload <strong>Search Query Performance</strong> or <strong>Search Catalog Performance</strong> reports from Brand Analytics to populate this view. These reports come from your 3P Brand Analytics account.</p>
           <p className="mt-1">Note: Search data is typically available at weekly grain. Daily comparisons are not possible with this data source.</p>
         </div>
       </div>

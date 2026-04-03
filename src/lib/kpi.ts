@@ -1,4 +1,4 @@
-import type { DailySummary } from '@/types/database'
+import type { PeriodSummary } from '@/types/database'
 
 export interface KpiResult {
   current: number;
@@ -8,9 +8,9 @@ export interface KpiResult {
 }
 
 export function calculateKpi(
-  currentPeriod: DailySummary[],
-  previousPeriod: DailySummary[],
-  metric: keyof DailySummary
+  currentPeriod: PeriodSummary[],
+  previousPeriod: PeriodSummary[],
+  metric: keyof PeriodSummary
 ): KpiResult {
   const current = currentPeriod.reduce((sum, row) => sum + (Number(row[metric]) || 0), 0)
   const previous = previousPeriod.reduce((sum, row) => sum + (Number(row[metric]) || 0), 0)
@@ -21,10 +21,10 @@ export function calculateKpi(
 }
 
 export function calculateAverageKpi(
-  currentPeriod: DailySummary[],
-  previousPeriod: DailySummary[],
-  numerator: keyof DailySummary,
-  denominator: keyof DailySummary
+  currentPeriod: PeriodSummary[],
+  previousPeriod: PeriodSummary[],
+  numerator: keyof PeriodSummary,
+  denominator: keyof PeriodSummary
 ): KpiResult {
   const currentNum = currentPeriod.reduce((sum, row) => sum + (Number(row[numerator]) || 0), 0)
   const currentDen = currentPeriod.reduce((sum, row) => sum + (Number(row[denominator]) || 0), 0)
@@ -89,16 +89,16 @@ export const KPI_DEFINITIONS: Record<string, { name: string; description: string
     formula: 'SUM(spend) / SUM(ordered_revenue)',
     source: 'fact_advertising + fact_sales',
   },
-  sessions: {
-    name: 'Sessions',
-    description: 'Unique visitor sessions on product detail pages',
-    formula: 'SUM(sessions)',
-    source: 'fact_traffic_conversion',
+  glance_views: {
+    name: 'Glance Views',
+    description: 'Detail page views from ARA Traffic (weekly grain)',
+    formula: 'SUM(glance_views)',
+    source: 'fact_traffic_conversion (ARA Traffic)',
   },
   conversion_rate: {
     name: 'Conversion Rate',
-    description: 'Units ordered per session',
-    formula: 'ordered_units / sessions',
-    source: 'fact_sales + fact_traffic_conversion',
+    description: 'Units ordered per glance view',
+    formula: 'ordered_units / glance_views',
+    source: 'fact_sales + fact_traffic_conversion (ARA)',
   },
 }

@@ -7,7 +7,7 @@ from typing import Optional
 # This handles the fact that Amazon reports use inconsistent column naming.
 COLUMN_ALIASES: dict[str, list[str]] = {
     # Date
-    "date_key": ["date", "day", "report date", "date range"],
+    "date_key": ["date", "day", "report date", "date range", "reporting range", "week"],
     # Product identifiers
     "asin": ["asin", "(child) asin", "advertised asin", "promoted asin", "child asin"],
     "parent_asin": ["parent asin", "(parent) asin"],
@@ -16,21 +16,29 @@ COLUMN_ALIASES: dict[str, list[str]] = {
         "product title", "title", "product name", "item name",
         "(child) asin title", "advertised product title",
     ],
+    "subcategory": ["subcategory", "sub category", "sub-category"],
     # Sales metrics
     "ordered_revenue": [
         "ordered product sales", "ordered revenue", "ordered product sales amount",
-        "sales", "revenue", "total sales",
+        "sales", "revenue", "total sales", "ordered revenue - this period",
     ],
+    "ordered_revenue_prior": ["ordered revenue - prior period", "ordered revenue - prior"],
+    "ordered_revenue_ly": ["ordered revenue - last year", "ordered revenue - ly"],
     "ordered_units": [
         "units ordered", "ordered units", "total units", "units",
     ],
+    "ordered_units_prior": ["ordered units - prior period", "ordered units - prior"],
+    "ordered_units_ly": ["ordered units - last year", "ordered units - ly"],
     "shipped_revenue": ["shipped revenue", "shipped product sales"],
     "shipped_units": ["shipped units"],
     "avg_selling_price": [
         "average selling price", "avg selling price", "asp",
-        "average sales price", "avg. selling price",
+        "average sales price", "avg. selling price", "average sales price - this period",
     ],
     # Traffic metrics
+    "glance_views": ["glance views", "glance views - this period", "detail page views", "page views"],
+    "glance_views_prior": ["glance views - prior period", "glance views - prior"],
+    "glance_views_ly": ["glance views - last year", "glance views - ly"],
     "sessions": ["sessions", "total sessions", "session count"],
     "page_views": ["page views", "pageviews", "page views - total", "detail page views"],
     "buy_box_percentage": [
@@ -82,6 +90,11 @@ COLUMN_ALIASES: dict[str, list[str]] = {
     "available_units": ["available", "available units", "afn fulfillable quantity"],
     "unfulfillable_units": ["unfulfillable", "unfulfillable quantity"],
     "sellable_units": ["sellable", "sellable units"],
+    "sellthrough_rate": ["sellthrough rate", "sell-through rate", "sell through rate"],
+    "open_po_units": ["open purchase order quantity", "open po quantity", "open po units"],
+    "weeks_of_cover": ["total weeks of cover", "weeks of cover"],
+    "aged_90plus_units": ["aged 90+ days sellable units", "aged 90+ units"],
+    "sell_in_units": ["sell-in units", "sell in units"],
     # Reviews
     "avg_rating": ["rating", "average rating", "star rating", "avg rating"],
     "review_count_new": ["review count", "reviews", "new reviews"],
@@ -90,6 +103,10 @@ COLUMN_ALIASES: dict[str, list[str]] = {
     "promo_start": ["start date", "promotion start date"],
     "promo_end": ["end date", "promotion end date"],
     "discount_percentage": ["discount", "discount %", "discount percentage"],
+    # Brand Analytics
+    "unique_customers": ["unique customers"],
+    "repeat_orders": ["repeat customer orders"],
+    "repeat_revenue": ["repeat customer revenue"],
 }
 
 # Build reverse lookup
