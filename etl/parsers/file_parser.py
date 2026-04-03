@@ -93,13 +93,10 @@ def detect_source_type(columns: list[str]) -> Optional[str]:
     """Detect the report source type based on column headers."""
     col_set = {c.lower().strip() for c in columns}
 
-    # ARA Sales - Ordered Revenue
-    if {"ordered revenue", "ordered units", "average sales price"}.issubset(col_set):
-        return "ARA Sales - Ordered Revenue"
-
-    # ARA Sales - Shipped Revenue
-    if {"shipped revenue", "shipped units", "shipped cogs"}.issubset(col_set):
-        return "ARA Sales - Shipped Revenue"
+    # ARA Sales (combined ordered + shipped in one report)
+    if {"ordered revenue", "ordered units"}.issubset(col_set) or \
+       {"shipped revenue", "shipped units"}.issubset(col_set):
+        return "ARA Sales"
 
     # ARA Traffic
     if "glance views" in col_set:

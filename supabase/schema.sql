@@ -77,12 +77,9 @@ INSERT INTO dim_report_source (source_name, source_category, expected_grain, des
   -- ============================================================
   -- ARA (Amazon Retail Analytics) - Vendor Central
   -- ============================================================
-  ('ARA Sales - Ordered Revenue', 'sales', 'weekly', 'ARA Standard: ordered revenue, units, and ASP by ASIN (weekly)',
-   '["ASIN", "Product Title", "Subcategory", "Ordered Revenue", "Ordered Revenue - Prior Period", "Ordered Revenue - Last Year", "Ordered Units", "Ordered Units - Prior Period", "Ordered Units - Last Year", "Average Sales Price", "Average Sales Price - Prior Period", "Average Sales Price - Last Year"]'::JSONB,
-   '{"ASIN": "asin", "Product Title": "product_title", "Subcategory": "subcategory", "Ordered Revenue": "ordered_revenue", "Ordered Units": "ordered_units", "Average Sales Price": "avg_selling_price", "Ordered Revenue - Prior Period": "ordered_revenue_prior", "Ordered Revenue - Last Year": "ordered_revenue_ly", "Ordered Units - Prior Period": "ordered_units_prior", "Ordered Units - Last Year": "ordered_units_ly"}'::JSONB),
-  ('ARA Sales - Shipped Revenue', 'sales', 'weekly', 'ARA Standard: shipped revenue and COGS by ASIN (weekly)',
-   '["ASIN", "Product Title", "Shipped Revenue", "Shipped Revenue - Prior Period", "Shipped Revenue - Last Year", "Shipped Units", "Shipped COGS", "Customer Returns"]'::JSONB,
-   '{"ASIN": "asin", "Product Title": "product_title", "Shipped Revenue": "shipped_revenue", "Shipped Units": "shipped_units", "Shipped COGS": "shipped_cogs"}'::JSONB),
+  ('ARA Sales', 'sales', 'weekly', 'ARA Standard: ordered + shipped revenue, units, ASP, and COGS by ASIN (weekly)',
+   '["ASIN", "Product Title", "Subcategory", "Ordered Revenue", "Ordered Revenue - Prior Period", "Ordered Revenue - Last Year", "Ordered Units", "Ordered Units - Prior Period", "Ordered Units - Last Year", "Average Sales Price", "Shipped Revenue", "Shipped Units", "Shipped COGS", "Customer Returns"]'::JSONB,
+   '{"ASIN": "asin", "Product Title": "product_title", "Subcategory": "subcategory", "Ordered Revenue": "ordered_revenue", "Ordered Units": "ordered_units", "Average Sales Price": "avg_selling_price", "Ordered Revenue - Prior Period": "ordered_revenue_prior", "Ordered Revenue - Last Year": "ordered_revenue_ly", "Ordered Units - Prior Period": "ordered_units_prior", "Ordered Units - Last Year": "ordered_units_ly", "Shipped Revenue": "shipped_revenue", "Shipped Units": "shipped_units", "Shipped COGS": "shipped_cogs"}'::JSONB),
   ('ARA Traffic', 'traffic', 'weekly', 'ARA Standard: glance views (detail page views) by ASIN (weekly)',
    '["ASIN", "Product Title", "Glance Views", "Glance Views - Prior Period", "Glance Views - Last Year"]'::JSONB,
    '{"ASIN": "asin", "Product Title": "product_title", "Glance Views": "page_views", "Glance Views - Prior Period": "page_views_prior", "Glance Views - Last Year": "page_views_ly"}'::JSONB),

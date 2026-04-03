@@ -9,8 +9,7 @@ import { createBrowserClient } from "@supabase/ssr"
 // Report source options (matches dim_report_source seeds)
 const REPORT_SOURCES = [
   // ARA (Vendor Central)
-  { value: "ARA Sales - Ordered Revenue", label: "ARA Sales - Ordered Revenue", category: "sales" },
-  { value: "ARA Sales - Shipped Revenue", label: "ARA Sales - Shipped Revenue", category: "sales" },
+  { value: "ARA Sales", label: "ARA Sales (Ordered + Shipped Revenue)", category: "sales" },
   { value: "ARA Traffic", label: "ARA Traffic (Glance Views)", category: "traffic" },
   { value: "ARA Inventory", label: "ARA Inventory", category: "operations" },
   // Advertising
@@ -464,8 +463,8 @@ export default function DataManagementPage() {
         <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Recommended Upload Order</h4>
         <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           <div className="rounded border border-border p-3">
-            <p className="text-sm font-medium text-foreground">1. ARA Sales - Ordered Revenue</p>
-            <p className="text-xs text-muted-foreground">Core revenue and units data from Vendor Central. Weekly grain. Best first upload for the executive overview.</p>
+            <p className="text-sm font-medium text-foreground">1. ARA Sales</p>
+            <p className="text-xs text-muted-foreground">Ordered + shipped revenue, units, ASP, and COGS in one report. Weekly grain. Best first upload.</p>
           </div>
           <div className="rounded border border-border p-3">
             <p className="text-sm font-medium text-foreground">2. ARA Traffic</p>
@@ -474,10 +473,6 @@ export default function DataManagementPage() {
           <div className="rounded border border-border p-3">
             <p className="text-sm font-medium text-foreground">3. SP Advertised Product Report</p>
             <p className="text-xs text-muted-foreground">ASIN-level ad performance. Enables TACoS calculation and ad-to-sales connection.</p>
-          </div>
-          <div className="rounded border border-border p-3">
-            <p className="text-sm font-medium text-foreground">4. ARA Sales - Shipped Revenue</p>
-            <p className="text-xs text-muted-foreground">Shipped revenue and COGS. Shows the gap between ordered and shipped, plus margin signals.</p>
           </div>
           <div className="rounded border border-border p-3">
             <p className="text-sm font-medium text-foreground">5. Search Query Performance</p>

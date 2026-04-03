@@ -64,10 +64,16 @@ for (const [canonical, aliases] of Object.entries(COLUMN_ALIASES)) {
 function detectSourceType(columns: string[]): string | null {
   const colSet = new Set(columns.map(c => c.toLowerCase().trim()))
 
-  if (colSet.has("ordered revenue") && colSet.has("ordered units") && colSet.has("average sales price"))
-    return "ARA Sales - Ordered Revenue"
+  // ARA Sales - combined report with both ordered + shipped
+  if ((colSet.has("ordered revenue") || colSet.has("ordered units")) &&
+      (colSet.has("shipped revenue") || colSet.has("shipped units")))
+    return "ARA Sales"
+  // ARA Sales - ordered only
+  if (colSet.has("ordered revenue") && colSet.has("ordered units"))
+    return "ARA Sales"
+  // ARA Sales - shipped only (rare, but handle it)
   if (colSet.has("shipped revenue") && colSet.has("shipped units"))
-    return "ARA Sales - Shipped Revenue"
+    return "ARA Sales"
   if (colSet.has("glance views"))
     return "ARA Traffic"
   if (colSet.has("sellthrough rate"))
@@ -176,6 +182,7 @@ function isBrandedQuery(query: string): boolean {
 
 // Source category mapping
 const SOURCE_CATEGORIES: Record<string, string> = {
+  "ARA Sales": "sales",
   "ARA Sales - Ordered Revenue": "sales",
   "ARA Sales - Shipped Revenue": "sales",
   "ARA Traffic": "traffic",
