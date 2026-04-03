@@ -1,6 +1,7 @@
 "use client"
 
 import { useState } from "react"
+import { createBrowserClient } from "@supabase/ssr"
 
 export default function LoginPage() {
   const [email, setEmail] = useState("")
@@ -14,15 +15,22 @@ export default function LoginPage() {
     setError("")
 
     try {
-      // In production, this uses Supabase Auth
-      // const { createClient } = await import('@/lib/supabase/client')
-      // const supabase = createClient()
-      // const { error } = await supabase.auth.signInWithPassword({ email, password })
-      // if (error) throw error
-      // window.location.href = '/overview'
+      const supabase = createBrowserClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL!,
+        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+      )
 
-      // For development without Supabase configured:
-      setError("Configure Supabase Auth in .env.local to enable login. For development, disable middleware auth check.")
+      const { error: authError } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      })
+
+      if (authError) {
+        setError(authError.message)
+        return
+      }
+
+      window.location.href = "/overview"
     } catch {
       setError("Login failed. Please check your credentials.")
     } finally {
