@@ -131,7 +131,26 @@ function detectPeriodDates(
   rows: Record<string, string>[],
   mapping: Record<string, string>,
   fileName?: string,
+  metadata?: Record<string, string>,
 ): { periodStart: string; periodEnd: string } {
+  // 0. Check XLSX metadata (Viewing Range from ARA header)
+  if (metadata?.viewing_range) {
+    const parts = metadata.viewing_range.split(/\s*[-–]\s*/)
+    if (parts.length === 2) {
+      const start = tryParseDate(parts[0].trim())
+      const end = tryParseDate(parts[1].trim())
+      if (start && end) return { periodStart: start, periodEnd: end }
+    }
+  }
+  if (metadata?.date_range_candidate) {
+    const parts = metadata.date_range_candidate.split(/\s*[-–]\s*/)
+    if (parts.length === 2) {
+      const start = tryParseDate(parts[0].trim())
+      const end = tryParseDate(parts[1].trim())
+      if (start && end) return { periodStart: start, periodEnd: end }
+    }
+  }
+
   // 1. Look for "Reporting Range" column
   const reportingRangeCol = Object.entries(mapping).find(([, v]) => v === "date_key")?.[0]
   if (reportingRangeCol && rows[0]?.[reportingRangeCol]) {
@@ -266,6 +285,7 @@ export async function POST(request: NextRequest) {
     // 2. Parse file (CSV or XLSX)
     let columns: string[] = []
     let rows: Record<string, string>[] = []
+    let xlsxMetadata: Record<string, string> = {}
     const ext = file.name.split(".").pop()?.toLowerCase()
 
     if (ext === "csv") {
@@ -281,17 +301,76 @@ export async function POST(request: NextRequest) {
       const workbook = XLSX.read(fileBuffer, { type: "buffer" })
       const sheetName = workbook.SheetNames[0]
       const sheet = workbook.Sheets[sheetName]
-      const jsonData = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: "" })
 
-      if (jsonData.length > 0) {
-        columns = Object.keys(jsonData[0]).map(c => String(c).trim())
-        rows = jsonData.map(row => {
-          const cleaned: Record<string, string> = {}
-          for (const [key, value] of Object.entries(row)) {
-            cleaned[key.trim()] = value != null ? String(value).trim() : ""
+      // ARA exports have metadata rows at the top (Program, Distributor View, etc.)
+      // We need to find the actual data header row by scanning for a row containing "ASIN"
+      const allRows = XLSX.utils.sheet_to_json<string[]>(sheet, { header: 1, defval: "" })
+
+      // Extract metadata from the top rows (e.g., Viewing Range for dates)
+      xlsxMetadata = {}
+      for (let i = 0; i < Math.min(allRows.length, 15); i++) {
+        const row = allRows[i]
+        if (!row || !Array.isArray(row)) continue
+        for (let j = 0; j < row.length; j++) {
+          const cell = String(row[j]).trim()
+          // Look for key-value patterns like "Viewing Range" in one cell and "3/22/26 - 3/28/26" in the next
+          if (cell.toLowerCase().includes("viewing range") || cell.toLowerCase().includes("reporting range")) {
+            const nextCell = j + 1 < row.length ? String(row[j + 1]).trim() : ""
+            if (nextCell) xlsxMetadata["viewing_range"] = nextCell
           }
-          return cleaned
-        })
+          // Also handle merged cells where key=value is in one cell
+          if (cell.includes(" - ") && /\d/.test(cell)) {
+            xlsxMetadata["date_range_candidate"] = cell
+          }
+        }
+      }
+
+      let headerRowIndex = 0
+      for (let i = 0; i < Math.min(allRows.length, 20); i++) {
+        const row = allRows[i]
+        if (!row || !Array.isArray(row)) continue
+        const rowValues = row.map(v => String(v).toLowerCase().trim())
+        // Look for a row that contains "asin" — that's the real header
+        if (rowValues.includes("asin") ||
+            rowValues.some(v => v.includes("ordered revenue")) ||
+            rowValues.some(v => v.includes("shipped revenue")) ||
+            rowValues.some(v => v.includes("glance views")) ||
+            rowValues.some(v => v.includes("impressions"))) {
+          headerRowIndex = i
+          break
+        }
+      }
+
+      // Re-read the sheet starting from the actual header row
+      if (headerRowIndex > 0) {
+        // Read as array of arrays, skip metadata rows
+        const rawRows = XLSX.utils.sheet_to_json<string[]>(sheet, { header: 1, defval: "" })
+        const headers = (rawRows[headerRowIndex] as string[]).map(h => String(h).trim())
+        const dataRows = rawRows.slice(headerRowIndex + 1)
+
+        columns = headers.filter(h => h.length > 0)
+        rows = dataRows
+          .filter(row => Array.isArray(row) && row.some(cell => cell !== "" && cell != null))
+          .map(row => {
+            const obj: Record<string, string> = {}
+            columns.forEach((col, idx) => {
+              obj[col] = row[idx] != null ? String(row[idx]).trim() : ""
+            })
+            return obj
+          })
+      } else {
+        // No metadata detected, parse normally
+        const jsonData = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: "" })
+        if (jsonData.length > 0) {
+          columns = Object.keys(jsonData[0]).map(c => String(c).trim())
+          rows = jsonData.map(row => {
+            const cleaned: Record<string, string> = {}
+            for (const [key, value] of Object.entries(row)) {
+              cleaned[key.trim()] = value != null ? String(value).trim() : ""
+            }
+            return cleaned
+          })
+        }
       }
     } else {
       return NextResponse.json({ error: "Unsupported file type. Use CSV or XLSX." }, { status: 400 })
@@ -367,7 +446,7 @@ export async function POST(request: NextRequest) {
     let loadedCount = 0
     let errorCount = 0
     const errors: Array<{ row: number; message: string }> = []
-    const { periodStart, periodEnd } = detectPeriodDates(rows, columnMapping, file.name)
+    const { periodStart, periodEnd } = detectPeriodDates(rows, columnMapping, file.name, xlsxMetadata)
 
     for (let i = 0; i < rows.length; i++) {
       try {
