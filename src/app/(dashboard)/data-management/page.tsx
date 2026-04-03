@@ -162,8 +162,15 @@ export default function DataManagementPage() {
     status: string
     rows_loaded: number
     rows_errors: number
+    rows_raw: number
     source_name: string
     date_range: string[]
+    columns_raw?: string[]
+    column_mapping?: Record<string, string>
+    columns_mapped?: number
+    columns_total?: number
+    errors?: Array<{ row: number; message: string }>
+    sample_row?: Record<string, string>
   } | null>(null)
 
   const handleUpload = async () => {
@@ -404,6 +411,42 @@ export default function DataManagementPage() {
                 <span className="font-medium">{uploadResult.date_range?.join(" to ")}</span>
               </div>
             </div>
+
+            {/* Debug info when there are errors */}
+            {uploadResult.rows_errors > 0 && uploadResult.errors && uploadResult.errors.length > 0 && (
+              <div className="mt-3 space-y-2">
+                <p className="text-xs font-medium text-red-700">First errors:</p>
+                <ul className="space-y-0.5 text-xs text-red-600">
+                  {uploadResult.errors.slice(0, 5).map((err, i) => (
+                    <li key={i}>Row {err.row}: {err.message}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            {/* Column mapping debug */}
+            {uploadResult.rows_errors > 0 && uploadResult.columns_raw && (
+              <div className="mt-3 space-y-1">
+                <p className="text-xs font-medium text-muted-foreground">
+                  Columns detected ({uploadResult.columns_mapped}/{uploadResult.columns_total} mapped):
+                </p>
+                <div className="flex flex-wrap gap-1">
+                  {uploadResult.columns_raw.map((col) => (
+                    <span
+                      key={col}
+                      className={cn(
+                        "rounded px-1.5 py-0.5 text-[10px]",
+                        uploadResult.column_mapping?.[col]
+                          ? "bg-green-100 text-green-700"
+                          : "bg-yellow-100 text-yellow-700"
+                      )}
+                    >
+                      {col}{uploadResult.column_mapping?.[col] ? ` → ${uploadResult.column_mapping[col]}` : " (unmapped)"}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         )}
       </div>

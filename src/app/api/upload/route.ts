@@ -633,6 +633,9 @@ export async function POST(request: NextRequest) {
       rows_errors: errorCount,
       columns_mapped: mappedCount,
       columns_total: columns.length,
+      columns_raw: columns,
+      column_mapping: columnMapping,
+      sample_row: rows[0] ? Object.fromEntries(Object.entries(rows[0]).slice(0, 10)) : null,
       date_range: [periodStart, periodEnd],
       errors: errors.slice(0, 10),
     })
