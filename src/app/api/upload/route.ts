@@ -11,7 +11,7 @@ function getSupabase() {
 
 // Column alias mapping for auto-mapping source columns to canonical names
 const COLUMN_ALIASES: Record<string, string[]> = {
-  date_key: ["date", "day", "report date", "date range", "reporting range", "week", "start date"],
+  date_key: ["date", "day", "report date", "date range", "reporting range", "week", "start date", "reporting range - viewing"],
   asin: ["asin", "(child) asin", "advertised asin", "promoted asin", "child asin"],
   parent_asin: ["parent asin", "(parent) asin"],
   product_title: ["product title", "title", "product name", "item name", "(child) asin title", "advertised product title"],
@@ -47,11 +47,13 @@ const COLUMN_ALIASES: Record<string, string[]> = {
   query_text: ["search query", "query", "customer search term", "search term"],
   search_query_volume: ["search query volume", "search volume", "query volume"],
   search_query_rank: ["search query score", "search frequency rank"],
-  click_share: ["click share", "search click share"],
-  purchase_share: ["purchase share", "search conversion share", "conversion share"],
+  click_share: ["click share", "search click share", "#1 click share"],
+  purchase_share: ["purchase share", "search conversion share", "conversion share", "#1 conversion share"],
   impression_share: ["impression share", "search impression share"],
   cart_adds: ["cart adds", "add to cart", "add to carts", "search funnel - cart adds"],
   purchases: ["purchases", "purchase count", "search funnel - purchases"],
+  // SQP uses numbered ASIN columns - map #1 Clicked ASIN as the primary
+  asin_sqp: ["#1 clicked asin", "#1 clicked asin title"],
   sellthrough_rate: ["sellthrough rate", "sell-through rate", "sell through rate"],
   open_po_units: ["open purchase order quantity", "open po quantity", "open po units"],
   available_units: ["available", "available units"],
@@ -482,7 +484,15 @@ export async function POST(request: NextRequest) {
           }
         }
 
-        const asin = normalizeAsin(mapped.asin)
+        // Try mapped ASIN first, then fall back to raw column names for SQP (#1 Clicked ASIN)
+        let asin = normalizeAsin(mapped.asin)
+        if (!asin) {
+          // Try SQP-specific columns directly from raw row
+          asin = normalizeAsin(raw["#1 Clicked ASIN"]) ||
+                 normalizeAsin(raw["#1 clicked asin"]) ||
+                 normalizeAsin(raw["ASIN"]) ||
+                 null
+        }
 
         // Upsert product if we have an ASIN
         let productId: string | null = null
@@ -614,33 +624,38 @@ export async function POST(request: NextRequest) {
           })
           loadedCount++
         } else if (sourceCategory === "search") {
-          // Search visibility data
-          if (mapped.query_text) {
-            const queryNormalized = mapped.query_text.trim().toLowerCase()
-            // Upsert query
-            const { data: existingQuery } = await supabase
-              .from("dim_query_keyword")
-              .select("query_id")
-              .eq("query_normalized", queryNormalized)
-              .single()
-
+          // Search visibility data — can have query only, ASIN only, or both
+          if (mapped.query_text || productId) {
             let queryId: string | null = null
-            if (existingQuery) {
-              queryId = existingQuery.query_id
-            } else {
-              const { data: newQuery } = await supabase
+            if (mapped.query_text) {
+              const queryNormalized = mapped.query_text.trim().toLowerCase()
+              const { data: existingQuery } = await supabase
                 .from("dim_query_keyword")
-                .insert({
-                  query_text: mapped.query_text.trim(),
-                  query_normalized: queryNormalized,
-                  is_branded: isBrandedQuery(mapped.query_text),
-                  brand_match_type: isBrandedQuery(mapped.query_text) ? "contains" : "none",
-                  first_seen_date: periodStart,
-                })
                 .select("query_id")
+                .eq("query_normalized", queryNormalized)
                 .single()
-              queryId = newQuery?.query_id || null
+
+              if (existingQuery) {
+                queryId = existingQuery.query_id
+              } else {
+                const { data: newQuery } = await supabase
+                  .from("dim_query_keyword")
+                  .insert({
+                    query_text: mapped.query_text.trim(),
+                    query_normalized: queryNormalized,
+                    is_branded: isBrandedQuery(mapped.query_text),
+                    brand_match_type: isBrandedQuery(mapped.query_text) ? "contains" : "none",
+                    first_seen_date: periodStart,
+                  })
+                  .select("query_id")
+                  .single()
+                queryId = newQuery?.query_id || null
+              }
             }
+
+            // Pull share data from mapped columns or SQP-specific raw columns
+            const clickShare = parsePercentage(mapped.click_share || raw["#1 Click Share"] || raw["#1 click share"] || "0")
+            const purchaseShare = parsePercentage(mapped.purchase_share || raw["#1 Conversion Share"] || raw["#1 conversion share"] || "0")
 
             await supabase.from("fact_search_visibility").insert({
               period_start: periodStart,
@@ -656,27 +671,14 @@ export async function POST(request: NextRequest) {
               cart_adds: Math.round(parseNumeric(mapped.cart_adds)),
               purchases: Math.round(parseNumeric(mapped.purchases)),
               impression_share: parsePercentage(mapped.impression_share),
-              click_share: parsePercentage(mapped.click_share),
-              purchase_share: parsePercentage(mapped.purchase_share),
+              click_share: clickShare,
+              purchase_share: purchaseShare,
             })
             loadedCount++
-          } else if (productId) {
-            // Search Catalog Performance (no query, just ASIN)
-            await supabase.from("fact_search_visibility").insert({
-              period_start: periodStart,
-              period_end: periodEnd,
-              product_id: productId,
-              marketplace_id: marketplaceId,
-              batch_id: batchId,
-              impressions: Math.round(parseNumeric(mapped.impressions)),
-              clicks: Math.round(parseNumeric(mapped.clicks)),
-              cart_adds: Math.round(parseNumeric(mapped.cart_adds)),
-              purchases: Math.round(parseNumeric(mapped.purchases)),
-              impression_share: parsePercentage(mapped.impression_share),
-              click_share: parsePercentage(mapped.click_share),
-              purchase_share: parsePercentage(mapped.purchase_share),
-            })
-            loadedCount++
+          } else {
+            // No query and no ASIN — skip row
+            errors.push({ row: i + 1, message: "No query or ASIN found for search row" })
+            errorCount++
           }
         } else if (sourceCategory === "operations" && productId) {
           await supabase.from("fact_operational_health").upsert({
