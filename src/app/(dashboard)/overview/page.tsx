@@ -1,3 +1,5 @@
+export const dynamic = 'force-dynamic'
+
 import { KpiCard } from "@/components/charts/kpi-card"
 import { TrendChart } from "@/components/charts/trend-chart"
 import { DataTable, type Column } from "@/components/charts/data-table"

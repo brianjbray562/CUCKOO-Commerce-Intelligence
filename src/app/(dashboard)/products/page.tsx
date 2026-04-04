@@ -1,3 +1,5 @@
+export const dynamic = 'force-dynamic'
+
 import { AlertCircle } from "lucide-react"
 import { getTopAsins } from "@/lib/data-access"
 import { ProductsClient, type ProductRow } from "./products-client"
