@@ -205,7 +205,7 @@ export async function getTopAsins() {
   }>()
 
   for (const row of sales) {
-    const product = row.dim_product as { asin: string; product_title: string } | null
+    const product = row.dim_product as unknown as { asin: string; product_title: string } | null
     if (!product) continue
     const key = product.asin
     const existing = asinMap.get(key)

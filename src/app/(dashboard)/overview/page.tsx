@@ -1,22 +1,8 @@
-"use client"
-
 import { KpiCard } from "@/components/charts/kpi-card"
 import { TrendChart } from "@/components/charts/trend-chart"
-import { BarChart } from "@/components/charts/bar-chart"
 import { DataTable, type Column } from "@/components/charts/data-table"
+import { getOverviewKpis, getTopAsins, getUploadCoverage } from "@/lib/data-access"
 import { AlertCircle } from "lucide-react"
-
-// Placeholder data — will be replaced with Supabase queries
-const SAMPLE_KPI = [
-  { label: "Ordered Revenue", value: 0, format: "currency" as const, tooltip: "SUM(ordered_revenue) from fact_sales", source: "fact_sales" },
-  { label: "Units Ordered", value: 0, format: "number" as const, tooltip: "SUM(ordered_units) from fact_sales", source: "fact_sales" },
-  { label: "Average Selling Price", value: 0, format: "currency" as const, tooltip: "ordered_revenue / ordered_units", source: "fact_sales" },
-  { label: "Ad Spend", value: 0, format: "currency" as const, tooltip: "SUM(spend) from fact_advertising", source: "fact_advertising" },
-  { label: "Ad Sales (Attributed)", value: 0, format: "currency" as const, tooltip: "SUM(ad_sales) from fact_advertising", source: "fact_advertising" },
-  { label: "ROAS", value: 0, format: "number" as const, tooltip: "ad_sales / spend", source: "fact_advertising" },
-  { label: "TACoS", value: 0, format: "percent" as const, tooltip: "SUM(ad_spend) / SUM(total_revenue)", source: "fact_advertising + fact_sales" },
-  { label: "Glance Views", value: 0, format: "compact" as const, tooltip: "SUM(glance_views) from ARA Traffic", source: "ARA Traffic" },
-]
 
 interface AsinRow {
   asin: string
@@ -40,7 +26,37 @@ const ASIN_COLUMNS: Column<AsinRow>[] = [
   { key: "conversion_rate", label: "CVR", format: "percent", sortable: true, align: "right" },
 ]
 
-export default function OverviewPage() {
+export default async function OverviewPage() {
+  const [kpis, topAsins, uploadCoverage] = await Promise.all([
+    getOverviewKpis(),
+    getTopAsins(),
+    getUploadCoverage(),
+  ])
+
+  const hasData = uploadCoverage.length > 0
+
+  const kpiCards = [
+    { label: "Ordered Revenue", value: kpis.orderedRevenue, format: "currency" as const, tooltip: "SUM(ordered_revenue) from fact_sales", source: "fact_sales" },
+    { label: "Units Ordered", value: kpis.orderedUnits, format: "number" as const, tooltip: "SUM(ordered_units) from fact_sales", source: "fact_sales" },
+    { label: "Average Selling Price", value: kpis.asp, format: "currency" as const, tooltip: "ordered_revenue / ordered_units", source: "fact_sales" },
+    { label: "Ad Spend", value: kpis.adSpend, format: "currency" as const, tooltip: "SUM(spend) from fact_advertising", source: "fact_advertising" },
+    { label: "Ad Sales (Attributed)", value: kpis.adSales, format: "currency" as const, tooltip: "SUM(ad_sales) from fact_advertising", source: "fact_advertising" },
+    { label: "ROAS", value: kpis.roas, format: "number" as const, tooltip: "ad_sales / spend", source: "fact_advertising" },
+    { label: "TACoS", value: kpis.tacos, format: "percent" as const, tooltip: "SUM(ad_spend) / SUM(total_revenue)", source: "fact_advertising + fact_sales" },
+    { label: "Glance Views", value: kpis.glanceViews, format: "compact" as const, tooltip: "SUM(glance_views) from ARA Traffic", source: "ARA Traffic" },
+  ]
+
+  const asinRows: AsinRow[] = topAsins.map((item) => ({
+    asin: item.asin,
+    product_title: item.product_title,
+    ordered_revenue: item.ordered_revenue,
+    ordered_units: item.ordered_units,
+    ad_spend: 0,
+    acos: 0,
+    sessions: 0,
+    conversion_rate: 0,
+  }))
+
   return (
     <div className="space-y-6">
       {/* Page header */}
@@ -51,21 +67,23 @@ export default function OverviewPage() {
         </p>
       </div>
 
-      {/* Data coverage notice */}
-      <div className="flex items-start gap-3 rounded-lg border border-border bg-muted/30 p-4">
-        <AlertCircle className="mt-0.5 h-4 w-4 text-muted-foreground shrink-0" />
-        <div className="text-sm text-muted-foreground">
-          <p className="font-medium text-foreground">No data uploaded yet</p>
-          <p className="mt-1">
-            Go to <a href="/data-management" className="font-medium text-primary underline">Data Management</a> to
-            upload your first report. Start with ARA Sales (Ordered Revenue) for the best initial view.
-          </p>
+      {/* Data coverage notice — only shown when no completed uploads exist */}
+      {!hasData && (
+        <div className="flex items-start gap-3 rounded-lg border border-border bg-muted/30 p-4">
+          <AlertCircle className="mt-0.5 h-4 w-4 text-muted-foreground shrink-0" />
+          <div className="text-sm text-muted-foreground">
+            <p className="font-medium text-foreground">No data uploaded yet</p>
+            <p className="mt-1">
+              Go to <a href="/data-management" className="font-medium text-primary underline">Data Management</a> to
+              upload your first report. Start with ARA Sales (Ordered Revenue) for the best initial view.
+            </p>
+          </div>
         </div>
-      </div>
+      )}
 
       {/* KPI Grid */}
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-        {SAMPLE_KPI.map((kpi) => (
+        {kpiCards.map((kpi) => (
           <KpiCard key={kpi.label} {...kpi} />
         ))}
       </div>
@@ -105,7 +123,7 @@ export default function OverviewPage() {
 
       {/* Top ASINs */}
       <DataTable<AsinRow>
-        data={[]}
+        data={asinRows}
         columns={ASIN_COLUMNS}
         title="Top ASINs by Revenue"
         emptyMessage="Upload sales data to see ASIN performance"

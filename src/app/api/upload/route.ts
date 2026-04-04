@@ -275,6 +275,14 @@ const SOURCE_CATEGORIES: Record<string, string> = {
   "Demographics": "search",
 }
 
+function chunkArray<T>(arr: T[], size: number): T[][] {
+  const chunks: T[][] = []
+  for (let i = 0; i < arr.length; i += size) {
+    chunks.push(arr.slice(i, i + size))
+  }
+  return chunks
+}
+
 export async function POST(request: NextRequest) {
   try {
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
@@ -537,65 +545,150 @@ export async function POST(request: NextRequest) {
     const errors: Array<{ row: number; message: string }> = []
     const { periodStart, periodEnd } = detectPeriodDates(rows, columnMapping, file.name, xlsxMetadata)
 
+    // Helper to apply column mapping to a raw row
+    function applyMapping(raw: Record<string, string>): Record<string, string> {
+      const mapped: Record<string, string> = {}
+      for (const [srcCol, canonCol] of Object.entries(columnMapping)) {
+        if (raw[srcCol] !== undefined) mapped[canonCol] = raw[srcCol]
+      }
+      return mapped
+    }
+
+    // Helper to resolve ASIN from a mapped+raw row
+    function resolveAsin(mapped: Record<string, string>, raw: Record<string, string>): string | null {
+      return normalizeAsin(mapped.asin) ||
+        normalizeAsin(raw["#1 Clicked ASIN"]) ||
+        normalizeAsin(raw["#1 clicked asin"]) ||
+        normalizeAsin(raw["ASIN"]) ||
+        null
+    }
+
+    // ── Phase 1: collect unique dimension values across all rows ──────────────
+
+    // asin → { title, subcategory } (last non-empty value wins)
+    const uniqueAsins = new Map<string, { title?: string; subcategory?: string }>()
+    // campaign_name → campaign_type
+    const uniqueCampaigns = new Map<string, string>()
+    // query_normalized → { query_text, is_branded }
+    const uniqueQueries = new Map<string, { query_text: string; is_branded: boolean }>()
+
+    for (const raw of rows) {
+      const mapped = applyMapping(raw)
+      const asin = resolveAsin(mapped, raw)
+      if (asin) {
+        const existing = uniqueAsins.get(asin) || {}
+        uniqueAsins.set(asin, {
+          title: mapped.product_title || existing.title,
+          subcategory: mapped.subcategory || existing.subcategory,
+        })
+      }
+      if (mapped.campaign_name) {
+        uniqueCampaigns.set(mapped.campaign_name, sourceName.startsWith("SB") ? "SB" : "SP")
+      }
+      if (mapped.query_text) {
+        const qn = mapped.query_text.trim().toLowerCase()
+        if (!uniqueQueries.has(qn)) {
+          uniqueQueries.set(qn, {
+            query_text: mapped.query_text.trim(),
+            is_branded: isBrandedQuery(mapped.query_text),
+          })
+        }
+      }
+    }
+
+    // ── Phase 2: batch-upsert dimensions and build lookup maps ───────────────
+
+    const asinToProductId = new Map<string, string>()
+    const campaignNameToId = new Map<string, string>()
+    const queryNormToId = new Map<string, string>()
+
+    // Products — upsert in chunks of 50
+    if (uniqueAsins.size > 0) {
+      for (const chunk of chunkArray(Array.from(uniqueAsins.entries()), 50)) {
+        const { data } = await supabase
+          .from("dim_product")
+          .upsert(
+            chunk.map(([asin, info]) => ({
+              asin,
+              product_title: info.title || null,
+              subcategory: info.subcategory || null,
+              brand: "CUCKOO",
+              is_active: true,
+              last_seen_date: periodEnd,
+            })),
+            { onConflict: "asin" }
+          )
+          .select("asin, product_id")
+        data?.forEach(p => asinToProductId.set(p.asin, p.product_id))
+      }
+    }
+
+    // Campaigns — upsert in chunks of 50
+    if (uniqueCampaigns.size > 0) {
+      for (const chunk of chunkArray(Array.from(uniqueCampaigns.entries()), 50)) {
+        const { data } = await supabase
+          .from("dim_campaign")
+          .upsert(
+            chunk.map(([campaign_name, campaign_type]) => ({
+              campaign_name,
+              campaign_type,
+              status: "active",
+            })),
+            { onConflict: "campaign_name,campaign_type" }
+          )
+          .select("campaign_name, campaign_id")
+        data?.forEach(c => campaignNameToId.set(c.campaign_name, c.campaign_id))
+      }
+    }
+
+    // Queries — upsert in chunks of 50
+    if (uniqueQueries.size > 0) {
+      for (const chunk of chunkArray(Array.from(uniqueQueries.entries()), 50)) {
+        const { data } = await supabase
+          .from("dim_query_keyword")
+          .upsert(
+            chunk.map(([query_normalized, info]) => ({
+              query_text: info.query_text,
+              query_normalized,
+              is_branded: info.is_branded,
+              brand_match_type: info.is_branded ? "contains" : "none",
+              first_seen_date: periodStart,
+            })),
+            { onConflict: "query_normalized" }
+          )
+          .select("query_normalized, query_id")
+        data?.forEach(q => queryNormToId.set(q.query_normalized, q.query_id))
+      }
+    }
+
+    // ── Phase 3: build fact rows arrays ──────────────────────────────────────
+
+    type SalesRow = Record<string, unknown>
+    type TrafficRow = Record<string, unknown>
+    type AdRow = Record<string, unknown>
+    type SearchRow = Record<string, unknown>
+    type OpsRow = Record<string, unknown>
+
+    const salesRows: SalesRow[] = []
+    const trafficRows: TrafficRow[] = []
+    const adRows: AdRow[] = []
+    const searchRows: SearchRow[] = []
+    const opsRows: OpsRow[] = []
+
     for (let i = 0; i < rows.length; i++) {
       try {
-        // Map columns
         const raw = rows[i]
-        const mapped: Record<string, string> = {}
-        for (const [srcCol, canonCol] of Object.entries(columnMapping)) {
-          if (raw[srcCol] !== undefined) {
-            mapped[canonCol] = raw[srcCol]
+        const mapped = applyMapping(raw)
+        const asin = resolveAsin(mapped, raw)
+        const productId = asin ? (asinToProductId.get(asin) ?? null) : null
+
+        if (sourceCategory === "sales") {
+          if (!productId) {
+            errors.push({ row: i + 1, message: "No valid ASIN found" })
+            errorCount++
+            continue
           }
-        }
-
-        // Try mapped ASIN first, then fall back to raw column names for SQP (#1 Clicked ASIN)
-        let asin = normalizeAsin(mapped.asin)
-        if (!asin) {
-          // Try SQP-specific columns directly from raw row
-          asin = normalizeAsin(raw["#1 Clicked ASIN"]) ||
-                 normalizeAsin(raw["#1 clicked asin"]) ||
-                 normalizeAsin(raw["ASIN"]) ||
-                 null
-        }
-
-        // Upsert product if we have an ASIN
-        let productId: string | null = null
-        if (asin) {
-          const { data: existing } = await supabase
-            .from("dim_product")
-            .select("product_id")
-            .eq("asin", asin)
-            .single()
-
-          if (existing) {
-            productId = existing.product_id
-            // Update title if available
-            if (mapped.product_title) {
-              await supabase.from("dim_product")
-                .update({ product_title: mapped.product_title, last_seen_date: periodEnd })
-                .eq("product_id", productId)
-            }
-          } else {
-            const { data: newProduct } = await supabase
-              .from("dim_product")
-              .insert({
-                asin,
-                product_title: mapped.product_title || null,
-                subcategory: mapped.subcategory || null,
-                brand: "CUCKOO",
-                is_active: true,
-                first_seen_date: periodStart,
-                last_seen_date: periodEnd,
-              })
-              .select("product_id")
-              .single()
-            productId = newProduct?.product_id || null
-          }
-        }
-
-        // Load into appropriate fact table
-        if (sourceCategory === "sales" && productId) {
-          await supabase.from("fact_sales").upsert({
+          salesRows.push({
             period_start: periodStart,
             period_end: periodEnd,
             grain: "weekly",
@@ -612,10 +705,14 @@ export async function POST(request: NextRequest) {
             ordered_revenue_ly: mapped.ordered_revenue_ly ? parseNumeric(mapped.ordered_revenue_ly) : null,
             ordered_units_prior: mapped.ordered_units_prior ? Math.round(parseNumeric(mapped.ordered_units_prior)) : null,
             ordered_units_ly: mapped.ordered_units_ly ? Math.round(parseNumeric(mapped.ordered_units_ly)) : null,
-          }, { onConflict: "period_start,period_end,product_id,marketplace_id,batch_id" })
-          loadedCount++
-        } else if (sourceCategory === "traffic" && productId) {
-          await supabase.from("fact_traffic_conversion").upsert({
+          })
+        } else if (sourceCategory === "traffic") {
+          if (!productId) {
+            errors.push({ row: i + 1, message: "No valid ASIN found" })
+            errorCount++
+            continue
+          }
+          trafficRows.push({
             period_start: periodStart,
             period_end: periodEnd,
             grain: "weekly",
@@ -625,51 +722,20 @@ export async function POST(request: NextRequest) {
             glance_views: Math.round(parseNumeric(mapped.glance_views)),
             glance_views_prior: mapped.glance_views_prior ? Math.round(parseNumeric(mapped.glance_views_prior)) : null,
             glance_views_ly: mapped.glance_views_ly ? Math.round(parseNumeric(mapped.glance_views_ly)) : null,
-          }, { onConflict: "period_start,period_end,product_id,marketplace_id,batch_id" })
-          loadedCount++
+          })
         } else if (sourceCategory === "advertising") {
-          // Parse date for daily ad data
           const dateKey = tryParseDate(mapped.date_key)
           if (!dateKey) {
             errors.push({ row: i + 1, message: "Could not parse date" })
             errorCount++
             continue
           }
-
-          // Upsert campaign
-          let campaignId: string | null = null
-          if (mapped.campaign_name) {
-            const campaignType = sourceName.startsWith("SB") ? "SB" : "SP"
-            const { data: existingCampaign } = await supabase
-              .from("dim_campaign")
-              .select("campaign_id")
-              .eq("campaign_name", mapped.campaign_name)
-              .eq("campaign_type", campaignType)
-              .single()
-
-            if (existingCampaign) {
-              campaignId = existingCampaign.campaign_id
-            } else {
-              const { data: newCampaign } = await supabase
-                .from("dim_campaign")
-                .insert({
-                  campaign_name: mapped.campaign_name,
-                  campaign_type: campaignType,
-                  status: "active",
-                  first_seen_date: dateKey,
-                })
-                .select("campaign_id")
-                .single()
-              campaignId = newCampaign?.campaign_id || null
-            }
-          }
-
+          const campaignId = mapped.campaign_name ? (campaignNameToId.get(mapped.campaign_name) ?? null) : null
           const adSpend = parseNumeric(mapped.spend)
           const adSales = parseNumeric(mapped.ad_sales)
           const adClicks = Math.round(parseNumeric(mapped.clicks))
           const adImpressions = Math.round(parseNumeric(mapped.impressions))
-
-          await supabase.from("fact_advertising").insert({
+          adRows.push({
             date_key: dateKey,
             product_id: productId,
             campaign_id: campaignId,
@@ -686,66 +752,41 @@ export async function POST(request: NextRequest) {
             acos: adSales > 0 ? adSpend / adSales : 0,
             roas: adSpend > 0 ? adSales / adSpend : 0,
           })
-          loadedCount++
         } else if (sourceCategory === "search") {
-          // Search visibility data — can have query only, ASIN only, or both
-          if (mapped.query_text || productId) {
-            let queryId: string | null = null
-            if (mapped.query_text) {
-              const queryNormalized = mapped.query_text.trim().toLowerCase()
-              const { data: existingQuery } = await supabase
-                .from("dim_query_keyword")
-                .select("query_id")
-                .eq("query_normalized", queryNormalized)
-                .single()
-
-              if (existingQuery) {
-                queryId = existingQuery.query_id
-              } else {
-                const { data: newQuery } = await supabase
-                  .from("dim_query_keyword")
-                  .insert({
-                    query_text: mapped.query_text.trim(),
-                    query_normalized: queryNormalized,
-                    is_branded: isBrandedQuery(mapped.query_text),
-                    brand_match_type: isBrandedQuery(mapped.query_text) ? "contains" : "none",
-                    first_seen_date: periodStart,
-                  })
-                  .select("query_id")
-                  .single()
-                queryId = newQuery?.query_id || null
-              }
-            }
-
-            // Pull share data from mapped columns or SQP-specific raw columns
-            const clickShare = parsePercentage(mapped.click_share || raw["#1 Click Share"] || raw["#1 click share"] || "0")
-            const purchaseShare = parsePercentage(mapped.purchase_share || raw["#1 Conversion Share"] || raw["#1 conversion share"] || "0")
-
-            await supabase.from("fact_search_visibility").insert({
-              period_start: periodStart,
-              period_end: periodEnd,
-              product_id: productId,
-              query_id: queryId,
-              marketplace_id: marketplaceId,
-              batch_id: batchId,
-              search_query_volume: Math.round(parseNumeric(mapped.search_query_volume)),
-              search_query_rank: mapped.search_query_rank ? Math.round(parseNumeric(mapped.search_query_rank)) : null,
-              impressions: Math.round(parseNumeric(mapped.impressions)),
-              clicks: Math.round(parseNumeric(mapped.clicks)),
-              cart_adds: Math.round(parseNumeric(mapped.cart_adds)),
-              purchases: Math.round(parseNumeric(mapped.purchases)),
-              impression_share: parsePercentage(mapped.impression_share),
-              click_share: clickShare,
-              purchase_share: purchaseShare,
-            })
-            loadedCount++
-          } else {
-            // No query and no ASIN — skip row
+          if (!mapped.query_text && !productId) {
             errors.push({ row: i + 1, message: "No query or ASIN found for search row" })
             errorCount++
+            continue
           }
-        } else if (sourceCategory === "operations" && productId) {
-          await supabase.from("fact_operational_health").upsert({
+          const queryId = mapped.query_text
+            ? (queryNormToId.get(mapped.query_text.trim().toLowerCase()) ?? null)
+            : null
+          const clickShare = parsePercentage(mapped.click_share || raw["#1 Click Share"] || raw["#1 click share"] || "0")
+          const purchaseShare = parsePercentage(mapped.purchase_share || raw["#1 Conversion Share"] || raw["#1 conversion share"] || "0")
+          searchRows.push({
+            period_start: periodStart,
+            period_end: periodEnd,
+            product_id: productId,
+            query_id: queryId,
+            marketplace_id: marketplaceId,
+            batch_id: batchId,
+            search_query_volume: Math.round(parseNumeric(mapped.search_query_volume)),
+            search_query_rank: mapped.search_query_rank ? Math.round(parseNumeric(mapped.search_query_rank)) : null,
+            impressions: Math.round(parseNumeric(mapped.impressions)),
+            clicks: Math.round(parseNumeric(mapped.clicks)),
+            cart_adds: Math.round(parseNumeric(mapped.cart_adds)),
+            purchases: Math.round(parseNumeric(mapped.purchases)),
+            impression_share: parsePercentage(mapped.impression_share),
+            click_share: clickShare,
+            purchase_share: purchaseShare,
+          })
+        } else if (sourceCategory === "operations") {
+          if (!productId) {
+            errors.push({ row: i + 1, message: "No valid ASIN found" })
+            errorCount++
+            continue
+          }
+          opsRows.push({
             period_start: periodStart,
             period_end: periodEnd,
             grain: "weekly",
@@ -757,8 +798,7 @@ export async function POST(request: NextRequest) {
             available_units: Math.round(parseNumeric(mapped.available_units)),
             weeks_of_cover: parseNumeric(mapped.weeks_of_cover),
             aged_90plus_units: Math.round(parseNumeric(mapped.aged_90plus_units)),
-          }, { onConflict: "period_start,period_end,product_id,marketplace_id,batch_id" })
-          loadedCount++
+          })
         } else {
           if (!productId && asin === null) {
             errors.push({ row: i + 1, message: "No valid ASIN found" })
@@ -768,6 +808,61 @@ export async function POST(request: NextRequest) {
       } catch (err) {
         errorCount++
         errors.push({ row: i + 1, message: String(err) })
+      }
+    }
+
+    // ── Phase 4: bulk insert/upsert fact rows in chunks ───────────────────────
+
+    for (const chunk of chunkArray(salesRows, 100)) {
+      const { error } = await supabase.from("fact_sales")
+        .upsert(chunk, { onConflict: "period_start,period_end,product_id,marketplace_id,batch_id" })
+      if (error) {
+        errorCount += chunk.length
+        errors.push({ row: -1, message: "fact_sales bulk upsert: " + error.message })
+      } else {
+        loadedCount += chunk.length
+      }
+    }
+
+    for (const chunk of chunkArray(trafficRows, 100)) {
+      const { error } = await supabase.from("fact_traffic_conversion")
+        .upsert(chunk, { onConflict: "period_start,period_end,product_id,marketplace_id,batch_id" })
+      if (error) {
+        errorCount += chunk.length
+        errors.push({ row: -1, message: "fact_traffic_conversion bulk upsert: " + error.message })
+      } else {
+        loadedCount += chunk.length
+      }
+    }
+
+    for (const chunk of chunkArray(adRows, 100)) {
+      const { error } = await supabase.from("fact_advertising").insert(chunk)
+      if (error) {
+        errorCount += chunk.length
+        errors.push({ row: -1, message: "fact_advertising bulk insert: " + error.message })
+      } else {
+        loadedCount += chunk.length
+      }
+    }
+
+    for (const chunk of chunkArray(searchRows, 100)) {
+      const { error } = await supabase.from("fact_search_visibility").insert(chunk)
+      if (error) {
+        errorCount += chunk.length
+        errors.push({ row: -1, message: "fact_search_visibility bulk insert: " + error.message })
+      } else {
+        loadedCount += chunk.length
+      }
+    }
+
+    for (const chunk of chunkArray(opsRows, 100)) {
+      const { error } = await supabase.from("fact_operational_health")
+        .upsert(chunk, { onConflict: "period_start,period_end,product_id,marketplace_id,batch_id" })
+      if (error) {
+        errorCount += chunk.length
+        errors.push({ row: -1, message: "fact_operational_health bulk upsert: " + error.message })
+      } else {
+        loadedCount += chunk.length
       }
     }
 
