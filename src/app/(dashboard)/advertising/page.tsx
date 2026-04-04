@@ -1,10 +1,9 @@
-"use client"
-
 import { KpiCard } from "@/components/charts/kpi-card"
 import { TrendChart } from "@/components/charts/trend-chart"
 import { BarChart } from "@/components/charts/bar-chart"
 import { DataTable, type Column } from "@/components/charts/data-table"
 import { AlertCircle } from "lucide-react"
+import { getAdSummary, getSalesSummary } from "@/lib/data-access"
 
 interface CampaignRow {
   campaign_name: string
@@ -28,7 +27,54 @@ const CAMPAIGN_COLUMNS: Column<CampaignRow>[] = [
   { key: "roas", label: "ROAS", format: "number", sortable: true, align: "right" },
 ]
 
-export default function AdvertisingPage() {
+export default async function AdvertisingPage() {
+  const [adData, salesData] = await Promise.all([getAdSummary(), getSalesSummary()])
+
+  // Aggregate totals
+  const totalSpend = adData.reduce((sum, r) => sum + Number(r.spend || 0), 0)
+  const totalAdSales = adData.reduce((sum, r) => sum + Number(r.ad_sales || 0), 0)
+  const totalRevenue = salesData.reduce((sum, r) => sum + Number(r.ordered_revenue || 0), 0)
+
+  const roas = totalSpend > 0 ? totalAdSales / totalSpend : 0
+  const acos = totalAdSales > 0 ? totalSpend / totalAdSales : 0
+  const tacos = totalRevenue > 0 ? totalSpend / totalRevenue : 0
+
+  // Aggregate by campaign name
+  const campaignMap = new Map<string, CampaignRow>()
+  for (const row of adData) {
+    const campaign = row.dim_campaign as unknown as { campaign_name: string; campaign_type: string } | null
+    const campaignName = campaign?.campaign_name || "Unknown Campaign"
+    const campaignType = campaign?.campaign_type || "-"
+
+    const existing = campaignMap.get(campaignName)
+    if (existing) {
+      existing.spend += Number(row.spend || 0)
+      existing.ad_sales += Number(row.ad_sales || 0)
+      existing.impressions += Number(row.impressions || 0)
+      existing.clicks += Number(row.clicks || 0)
+    } else {
+      campaignMap.set(campaignName, {
+        campaign_name: campaignName,
+        campaign_type: campaignType,
+        spend: Number(row.spend || 0),
+        ad_sales: Number(row.ad_sales || 0),
+        impressions: Number(row.impressions || 0),
+        clicks: Number(row.clicks || 0),
+        acos: 0,
+        roas: 0,
+      })
+    }
+  }
+
+  // Compute derived metrics per campaign
+  const campaignRows: CampaignRow[] = Array.from(campaignMap.values()).map((c) => ({
+    ...c,
+    acos: c.ad_sales > 0 ? c.spend / c.ad_sales : 0,
+    roas: c.spend > 0 ? c.ad_sales / c.spend : 0,
+  })).sort((a, b) => b.spend - a.spend)
+
+  const hasData = adData.length > 0
+
   return (
     <div className="space-y-6">
       <div>
@@ -38,20 +84,22 @@ export default function AdvertisingPage() {
         </p>
       </div>
 
-      <div className="flex items-start gap-3 rounded-lg border border-border bg-muted/30 p-4">
-        <AlertCircle className="mt-0.5 h-4 w-4 text-muted-foreground shrink-0" />
-        <div className="text-sm text-muted-foreground">
-          <p>Upload <strong>SP Campaign Reports</strong>, <strong>SP Advertised Product Reports</strong>, or <strong>SB Campaign Reports</strong> to populate this view.</p>
+      {!hasData && (
+        <div className="flex items-start gap-3 rounded-lg border border-border bg-muted/30 p-4">
+          <AlertCircle className="mt-0.5 h-4 w-4 text-muted-foreground shrink-0" />
+          <div className="text-sm text-muted-foreground">
+            <p>Upload <strong>SP Campaign Reports</strong>, <strong>SP Advertised Product Reports</strong>, or <strong>SB Campaign Reports</strong> to populate this view.</p>
+          </div>
         </div>
-      </div>
+      )}
 
       {/* KPIs */}
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-4 lg:grid-cols-5">
-        <KpiCard label="Total Ad Spend" value={0} format="currency" tooltip="SUM(spend)" source="fact_advertising" />
-        <KpiCard label="Ad Sales" value={0} format="currency" tooltip="SUM(ad_sales)" source="fact_advertising" />
-        <KpiCard label="ROAS" value={0} format="number" tooltip="ad_sales / spend" source="fact_advertising" />
-        <KpiCard label="ACoS" value={0} format="percent" tooltip="spend / ad_sales" source="fact_advertising" />
-        <KpiCard label="TACoS" value={0} format="percent" tooltip="ad_spend / total_revenue" source="fact_advertising + fact_sales" />
+        <KpiCard label="Total Ad Spend" value={totalSpend} format="currency" tooltip="SUM(spend)" source="fact_advertising" />
+        <KpiCard label="Ad Sales" value={totalAdSales} format="currency" tooltip="SUM(ad_sales)" source="fact_advertising" />
+        <KpiCard label="ROAS" value={roas} format="number" tooltip="ad_sales / spend" source="fact_advertising" />
+        <KpiCard label="ACoS" value={acos} format="percent" tooltip="spend / ad_sales" source="fact_advertising" />
+        <KpiCard label="TACoS" value={tacos} format="percent" tooltip="ad_spend / total_revenue" source="fact_advertising + fact_sales" />
       </div>
 
       {/* Spend + Sales trend */}
@@ -99,7 +147,7 @@ export default function AdvertisingPage() {
 
       {/* Campaign table */}
       <DataTable<CampaignRow>
-        data={[]}
+        data={campaignRows}
         columns={CAMPAIGN_COLUMNS}
         title="Campaign Performance"
         emptyMessage="Upload advertising reports to see campaign breakdown"
