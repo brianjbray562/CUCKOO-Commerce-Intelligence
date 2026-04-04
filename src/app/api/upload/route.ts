@@ -237,17 +237,47 @@ function detectPeriodDates(
 
 function tryParseDate(value: string): string | null {
   if (!value) return null
+  const trimmed = value.trim()
+
   // Try ISO format first
-  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return value
-  // Try MM/DD/YYYY
-  const match = value.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/)
+  if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return trimmed
+
+  // Try MM/DD/YYYY or M/D/YYYY
+  const match = trimmed.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/)
   if (match) {
     const year = match[3].length === 2 ? `20${match[3]}` : match[3]
     return `${year}-${match[1].padStart(2, "0")}-${match[2].padStart(2, "0")}`
   }
+
+  // Try Excel serial number (e.g., 46103 = 2026-03-22)
+  // Excel epoch is 1899-12-30; serial numbers are days since then
+  const num = Number(trimmed)
+  if (!isNaN(num) && num > 40000 && num < 60000) {
+    const excelEpoch = new Date(1899, 11, 30) // Dec 30, 1899
+    const date = new Date(excelEpoch.getTime() + num * 86400000)
+    if (!isNaN(date.getTime())) {
+      return date.toISOString().split("T")[0]
+    }
+  }
+
+  // Try "+046103-01-01" format (malformed Excel date)
+  const excelMatch = trimmed.match(/^\+?0?(\d{5})-/)
+  if (excelMatch) {
+    const serial = Number(excelMatch[1])
+    if (serial > 40000 && serial < 60000) {
+      const excelEpoch = new Date(1899, 11, 30)
+      const date = new Date(excelEpoch.getTime() + serial * 86400000)
+      if (!isNaN(date.getTime())) {
+        return date.toISOString().split("T")[0]
+      }
+    }
+  }
+
   // Try Date constructor as fallback
-  const d = new Date(value)
-  if (!isNaN(d.getTime())) return d.toISOString().split("T")[0]
+  const d = new Date(trimmed)
+  if (!isNaN(d.getTime()) && d.getFullYear() > 2000 && d.getFullYear() < 2100) {
+    return d.toISOString().split("T")[0]
+  }
   return null
 }
 
@@ -395,7 +425,7 @@ export async function POST(request: NextRequest) {
         rows = parseResult.data
       }
     } else if (ext === "xlsx" || ext === "xls") {
-      const workbook = XLSX.read(fileBuffer, { type: "buffer" })
+      const workbook = XLSX.read(fileBuffer, { type: "buffer", cellDates: true })
       const sheetName = workbook.SheetNames[0]
       const sheet = workbook.Sheets[sheetName]
 
@@ -463,7 +493,9 @@ export async function POST(request: NextRequest) {
           rows = jsonData.map(row => {
             const cleaned: Record<string, string> = {}
             for (const [key, value] of Object.entries(row)) {
-              cleaned[key.trim()] = value != null ? String(value).trim() : ""
+              cleaned[key.trim()] = value instanceof Date
+                  ? value.toISOString().split("T")[0]
+                  : value != null ? String(value).trim() : ""
             }
             return cleaned
           })
